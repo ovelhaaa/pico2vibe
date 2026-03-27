@@ -48,6 +48,23 @@
 
 #define AUDIO_SYS_CLOCK_HZ 135475200u
 
+// Final output conditioning toggles (keep lightweight, easy to bypass if desired).
+#ifndef ENABLE_OUTPUT_DC_BLOCKER
+#define ENABLE_OUTPUT_DC_BLOCKER 1
+#endif
+
+#ifndef ENABLE_OUTPUT_AUTO_HEADROOM
+#define ENABLE_OUTPUT_AUTO_HEADROOM 1
+#endif
+
+#ifndef ENABLE_OUTPUT_SOFT_LIMITER
+#define ENABLE_OUTPUT_SOFT_LIMITER 1
+#endif
+
+#ifndef ENABLE_TPDF_DITHER
+#define ENABLE_TPDF_DITHER 1
+#endif
+
 static inline float fast_soft_clip(float x) {
     return x / (1.0f + fabsf(x));
 }
@@ -60,6 +77,15 @@ static inline float noise_bipolar(uint32_t &state) {
     state = state * 1664525u + 1013904223u;
     const float uni = (float)((state >> 8) & 0x00FFFFFFu) * (1.0f / 16777215.0f);
     return uni * 2.0f - 1.0f;
+}
+
+static inline float fast_sqrt01(float v) {
+    return sqrtf(clampf(v, 0.0f, 1.0f));
+}
+
+static inline float soft_clip_cubic(float x) {
+    const float xx = x * x;
+    return x * (27.0f + xx) / (27.0f + 9.0f * xx);
 }
 
 constexpr float kPi = 3.14159265358979323846f;
@@ -283,6 +309,7 @@ private:
     float on0[8], on1[8], od0[8], od1[8];
     uint32_t rng_seed = 0x13579BDFu;
     VibeUserParams smoothed_user;
+    float output_trim_smoothed = 1.0f;
 
     float vibefilter(float data, fparams *ftype);
     void modulate(float res_l, float res_r);
@@ -754,6 +781,16 @@ void Vibe::out(float *smpsl, float *smpsr) {
     const float input_drive = smoothed_user.input_drive;
     const float output_gain = smoothed_user.output_gain;
     const float stage_limit = clampf(params.tuning.stage_state_limit, 2.0f, 12.0f);
+    const float wet_gain = fast_sqrt01(mix);
+    const float dry_gain = fast_sqrt01(1.0f - mix);
+    const float drive_norm = clampf((input_drive - 0.5f) * (1.0f / 5.5f), 0.0f, 1.0f);
+    const float fb_norm = clampf(feedback * (1.0f / 0.65f), 0.0f, 1.0f);
+    const float mix_stress = mix * mix;
+    const float stress = 0.45f * drive_norm + 0.35f * fb_norm + 0.20f * mix_stress;
+    const float target_trim = 1.0f / (1.0f + 0.35f * stress);
+    // Smooth trim avoids pumping while creating extra headroom on extreme presets.
+    output_trim_smoothed += 0.08f * (target_trim - output_trim_smoothed);
+    const float final_gain = output_gain * output_trim_smoothed;
 
     float target_l = sweep_min + depth * lfol * (sweep_max - sweep_min);
     float target_r = sweep_min + depth * lfor * (sweep_max - sweep_min);
@@ -800,8 +837,8 @@ void Vibe::out(float *smpsl, float *smpsr) {
         }
 
         fbl = fast_soft_clip(stage[3].oldcvolt * feedback);
-        efxoutl[i] = output_gain * (mode_chorus ? lpanning * (dry_l * (1.0f - mix) + input * mix)
-                                                : lpanning * input);
+        const float mixed_l = mode_chorus ? (dry_l * dry_gain + input * wet_gain) : input;
+        efxoutl[i] = final_gain * lpanning * mixed_l;
 
         float dry_r = smpsr[i];
         input = bjt_shape(fbr + dry_r, input_drive);
@@ -816,8 +853,8 @@ void Vibe::out(float *smpsl, float *smpsr) {
         }
 
         fbr = fast_soft_clip(stage[7].oldcvolt * feedback);
-        efxoutr[i] = output_gain * (mode_chorus ? rpanning * (dry_r * (1.0f - mix) + input * mix)
-                                                : rpanning * input);
+        const float mixed_r = mode_chorus ? (dry_r * dry_gain + input * wet_gain) : input;
+        efxoutr[i] = final_gain * rpanning * mixed_r;
     }
 }
 
@@ -830,10 +867,69 @@ static inline float pcm24_to_float(int32_t v) {
     return (float)v * (1.0f / 8388608.0f);
 }
 
-static inline int32_t float_to_pcm24(float v) {
+static inline int32_t float_to_pcm24(float v, uint32_t &rng_state) {
+#if ENABLE_TPDF_DITHER
+    // TPDF dither at roughly +/-1 LSB before quantization reduces low-level truncation grit.
+    const float tpdf = (noise_bipolar(rng_state) + noise_bipolar(rng_state)) * (0.5f / 8388607.0f);
+    v += tpdf;
+#else
+    (void)rng_state;
+#endif
     if (v > 1.0f) v = 1.0f;
     if (v < -1.0f) v = -1.0f;
     return ((int32_t)(v * 8388607.0f)) << 8;
+}
+
+struct OutputDcBlocker {
+    float x1 = 0.0f;
+    float y1 = 0.0f;
+};
+
+struct OutputConditioner {
+    OutputDcBlocker dc_l;
+    OutputDcBlocker dc_r;
+    float env = 0.0f;
+    float trim = 1.0f;
+    uint32_t dither_rng = 0xC001C0DEu;
+};
+
+static OutputConditioner output_conditioner;
+
+static inline float dc_block_sample(OutputDcBlocker &s, float x) {
+#if ENABLE_OUTPUT_DC_BLOCKER
+    // Very low cutoff (~8 Hz) removes slow bias drift while preserving guitar lows.
+    constexpr float kDcR = 0.99886f;
+    const float y = (x - s.x1) + kDcR * s.y1;
+    s.x1 = x;
+    s.y1 = y;
+    return y;
+#else
+    (void)s;
+    return x;
+#endif
+}
+
+static inline float condition_output_sample(OutputConditioner &st, float x, OutputDcBlocker &dc_state) {
+    float y = dc_block_sample(dc_state, x);
+
+#if ENABLE_OUTPUT_AUTO_HEADROOM
+    const float abs_y = fabsf(y);
+    const float env_attack = 0.14f;
+    const float env_release = 0.003f;
+    st.env += (abs_y > st.env ? env_attack : env_release) * (abs_y - st.env);
+    const float target = (st.env > 0.92f) ? (0.92f / (st.env + 1e-12f)) : 1.0f;
+    const float trim_attack = 0.20f;
+    const float trim_release = 0.0015f;
+    st.trim += (target < st.trim ? trim_attack : trim_release) * (target - st.trim);
+    y *= st.trim;
+#endif
+
+#if ENABLE_OUTPUT_SOFT_LIMITER
+    // Safety limiter: soft knee near full-scale avoids edgy hard clipping.
+    const float limit_drive = 1.25f;
+    y = soft_clip_cubic(y * limit_drive) * (1.0f / limit_drive);
+#endif
+    return y;
 }
 
 // ============================================================================
@@ -1065,6 +1161,9 @@ static void audio_start(void) {
     rx_block_ready[1] = false;
     tx_block_ready[0] = false;
     tx_block_ready[1] = false;
+    output_conditioner = {};
+    output_conditioner.trim = 1.0f;
+    output_conditioner.dither_rng = time_us_32() ^ 0xC001C0DEu;
 
     pio_sm_set_enabled(pio, sm_clk, false);
     pio_sm_set_enabled(pio, sm_tx, false);
@@ -1095,8 +1194,10 @@ static void process_block(int block_index) {
     univibe.out(dsp_in_l, dsp_in_r);
 
     for (int i = 0; i < PERIOD; i++) {
-        tx_dma_buf[block_index][2 * i + 0] = float_to_pcm24(dsp_out_l[i]);
-        tx_dma_buf[block_index][2 * i + 1] = float_to_pcm24(dsp_out_r[i]);
+        const float out_l = condition_output_sample(output_conditioner, dsp_out_l[i], output_conditioner.dc_l);
+        const float out_r = condition_output_sample(output_conditioner, dsp_out_r[i], output_conditioner.dc_r);
+        tx_dma_buf[block_index][2 * i + 0] = float_to_pcm24(out_l, output_conditioner.dither_rng);
+        tx_dma_buf[block_index][2 * i + 1] = float_to_pcm24(out_r, output_conditioner.dither_rng);
     }
 
     __dmb();
