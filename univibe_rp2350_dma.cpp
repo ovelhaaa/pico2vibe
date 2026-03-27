@@ -48,6 +48,18 @@
 
 #define AUDIO_SYS_CLOCK_HZ 135475200u
 
+#ifndef ENABLE_OUTPUT_DC_BLOCK
+#define ENABLE_OUTPUT_DC_BLOCK 1
+#endif
+
+#ifndef ENABLE_OUTPUT_SOFT_LIMITER
+#define ENABLE_OUTPUT_SOFT_LIMITER 1
+#endif
+
+#ifndef ENABLE_PCM24_TPDF_DITHER
+#define ENABLE_PCM24_TPDF_DITHER 1
+#endif
+
 static inline float fast_soft_clip(float x) {
     return x / (1.0f + fabsf(x));
 }
@@ -63,6 +75,14 @@ static inline float noise_bipolar(uint32_t &state) {
 }
 
 constexpr float kPi = 3.14159265358979323846f;
+
+static inline float equal_power_dry_gain(float mix) {
+    return cosf(clampf(mix, 0.0f, 1.0f) * 0.5f * kPi);
+}
+
+static inline float equal_power_wet_gain(float mix) {
+    return sinf(clampf(mix, 0.0f, 1.0f) * 0.5f * kPi);
+}
 
 struct VibeUserParams {
     float depth = 0.85f;
@@ -283,12 +303,18 @@ private:
     float on0[8], on1[8], od0[8], od1[8];
     uint32_t rng_seed = 0x13579BDFu;
     VibeUserParams smoothed_user;
+    float output_dc_x1_l = 0.0f, output_dc_x1_r = 0.0f;
+    float output_dc_y1_l = 0.0f, output_dc_y1_r = 0.0f;
+    float output_peak_env = 0.0f;
+    float output_trim = 1.0f;
 
     float vibefilter(float data, fparams *ftype);
     void modulate(float res_l, float res_r);
     void update_time_constants();
     void update_smoothed_user_params();
     float bjt_shape(float data, float drive);
+    float process_output_sample(float x, float dynamic_headroom, float limiter_attack, float limiter_release,
+                                float dc_block_coeff, float &dc_x1, float &dc_y1);
 };
 
 #if USER_INTERFACE
@@ -593,6 +619,12 @@ void Vibe::reseed(uint32_t seed) {
     lamp_state_r = 0.0f;
     fbl = 0.0f;
     fbr = 0.0f;
+    output_dc_x1_l = 0.0f;
+    output_dc_x1_r = 0.0f;
+    output_dc_y1_l = 0.0f;
+    output_dc_y1_r = 0.0f;
+    output_peak_env = 0.0f;
+    output_trim = 1.0f;
     sanitize_user_params(&params.user);
     smoothed_user = params.user;
     lfo.reseed(rng_seed ^ 0xA511E9B3u);
@@ -661,6 +693,40 @@ void Vibe::update_smoothed_user_params() {
 
 float Vibe::bjt_shape(float data, float drive) {
     return fast_soft_clip(data * drive) * params.tuning.bjt_gain_trim;
+}
+
+float Vibe::process_output_sample(float x, float dynamic_headroom, float limiter_attack, float limiter_release,
+                                  float dc_block_coeff, float &dc_x1, float &dc_y1) {
+#if ENABLE_OUTPUT_DC_BLOCK
+    // Lightweight DC blocker keeps the converter centered and avoids low-end pumping with extreme feedback.
+    const float hp = x - dc_x1 + dc_block_coeff * dc_y1;
+    dc_x1 = x;
+    dc_y1 = hp;
+    x = hp;
+#else
+    (void)dc_block_coeff;
+    (void)dc_x1;
+    (void)dc_y1;
+#endif
+
+    const float abs_x = fabsf(x);
+    const float env_alpha = (abs_x > output_peak_env) ? limiter_attack : limiter_release;
+    output_peak_env += env_alpha * (abs_x - output_peak_env);
+
+    const float target_trim = (output_peak_env > dynamic_headroom)
+                                  ? (dynamic_headroom / (output_peak_env + 1e-9f))
+                                  : 1.0f;
+    output_trim += 0.05f * (target_trim - output_trim);
+    x *= output_trim;
+
+#if ENABLE_OUTPUT_SOFT_LIMITER
+    // Final safety limiter is soft-knee so hot presets stay musical without hard digital clipping.
+    constexpr float kLimiterDrive = 1.75f;
+    const float norm = 1.0f / fast_soft_clip(kLimiterDrive);
+    x = fast_soft_clip(x * kLimiterDrive) * norm;
+#endif
+
+    return x;
 }
 
 void Vibe::init_vibes() {
@@ -754,6 +820,18 @@ void Vibe::out(float *smpsl, float *smpsr) {
     const float input_drive = smoothed_user.input_drive;
     const float output_gain = smoothed_user.output_gain;
     const float stage_limit = clampf(params.tuning.stage_state_limit, 2.0f, 12.0f);
+    const float mix_dry = equal_power_dry_gain(mix);
+    const float mix_wet = equal_power_wet_gain(mix);
+
+    const float drive_norm = clampf((input_drive - 0.5f) / (6.0f - 0.5f), 0.0f, 1.0f);
+    const float feedback_norm = clampf(feedback / 0.65f, 0.0f, 1.0f);
+    const float intensity = clampf(0.45f * drive_norm + 0.30f * feedback_norm + 0.25f * depth * mix, 0.0f, 1.0f);
+    const float dynamic_headroom = 0.96f - 0.20f * intensity;
+    const float gain_comp = 1.0f / sqrtf(1.0f + 0.30f * intensity);
+    const float final_gain = output_gain * gain_comp;
+    const float limiter_attack = 0.35f;
+    const float limiter_release = 0.02f;
+    const float dc_block_coeff = expf(-2.0f * kPi * 12.0f * cSAMPLE_RATE);
 
     float target_l = sweep_min + depth * lfol * (sweep_max - sweep_min);
     float target_r = sweep_min + depth * lfor * (sweep_max - sweep_min);
@@ -800,8 +878,11 @@ void Vibe::out(float *smpsl, float *smpsr) {
         }
 
         fbl = fast_soft_clip(stage[3].oldcvolt * feedback);
-        efxoutl[i] = output_gain * (mode_chorus ? lpanning * (dry_l * (1.0f - mix) + input * mix)
-                                                : lpanning * input);
+        float out_l = mode_chorus ? lpanning * (dry_l * mix_dry + input * mix_wet)
+                                  : lpanning * input;
+        out_l *= final_gain;
+        efxoutl[i] = process_output_sample(out_l, dynamic_headroom, limiter_attack, limiter_release,
+                                           dc_block_coeff, output_dc_x1_l, output_dc_y1_l);
 
         float dry_r = smpsr[i];
         input = bjt_shape(fbr + dry_r, input_drive);
@@ -816,8 +897,11 @@ void Vibe::out(float *smpsl, float *smpsr) {
         }
 
         fbr = fast_soft_clip(stage[7].oldcvolt * feedback);
-        efxoutr[i] = output_gain * (mode_chorus ? rpanning * (dry_r * (1.0f - mix) + input * mix)
-                                                : rpanning * input);
+        float out_r = mode_chorus ? rpanning * (dry_r * mix_dry + input * mix_wet)
+                                  : rpanning * input;
+        out_r *= final_gain;
+        efxoutr[i] = process_output_sample(out_r, dynamic_headroom, limiter_attack, limiter_release,
+                                           dc_block_coeff, output_dc_x1_r, output_dc_y1_r);
     }
 }
 
@@ -830,10 +914,19 @@ static inline float pcm24_to_float(int32_t v) {
     return (float)v * (1.0f / 8388608.0f);
 }
 
-static inline int32_t float_to_pcm24(float v) {
-    if (v > 1.0f) v = 1.0f;
-    if (v < -1.0f) v = -1.0f;
-    return ((int32_t)(v * 8388607.0f)) << 8;
+static inline int32_t float_to_pcm24(float v, uint32_t &rng_state) {
+#if ENABLE_PCM24_TPDF_DITHER
+    // Optional TPDF dither lowers quantization distortion when converting to 24-bit PCM.
+    const float tpdf = (noise_bipolar(rng_state) + noise_bipolar(rng_state)) * (0.5f / 8388608.0f);
+    v += tpdf;
+#else
+    (void)rng_state;
+#endif
+    const float scaled = clampf(v, -1.0f, 1.0f) * 8388607.0f;
+    int32_t quantized = (int32_t)lrintf(scaled);
+    if (quantized > 8388607) quantized = 8388607;
+    if (quantized < -8388608) quantized = -8388608;
+    return quantized << 8;
 }
 
 // ============================================================================
@@ -863,6 +956,7 @@ static volatile uint32_t tx_underruns = 0;
 static volatile int rx_fill_index = 0;
 static volatile int tx_expected_index = 0;
 static volatile int tx_bootstrap_remaining = 2;
+static uint32_t pcm_dither_rng = 0xC001D00Du;
 
 // ============================================================================
 // PIO / DMA state
@@ -1095,8 +1189,8 @@ static void process_block(int block_index) {
     univibe.out(dsp_in_l, dsp_in_r);
 
     for (int i = 0; i < PERIOD; i++) {
-        tx_dma_buf[block_index][2 * i + 0] = float_to_pcm24(dsp_out_l[i]);
-        tx_dma_buf[block_index][2 * i + 1] = float_to_pcm24(dsp_out_r[i]);
+        tx_dma_buf[block_index][2 * i + 0] = float_to_pcm24(dsp_out_l[i], pcm_dither_rng);
+        tx_dma_buf[block_index][2 * i + 1] = float_to_pcm24(dsp_out_r[i], pcm_dither_rng);
     }
 
     __dmb();
