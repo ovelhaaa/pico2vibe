@@ -52,6 +52,20 @@ static inline float fast_soft_clip(float x) {
     return x / (1.0f + fabsf(x));
 }
 
+#ifndef VIBE_ENABLE_LOCAL_2X_OVERSAMPLE
+#define VIBE_ENABLE_LOCAL_2X_OVERSAMPLE 1
+#endif
+
+enum SaturationMode : uint8_t {
+    SAT_FALLBACK_SOFT = 0,
+    SAT_CLASSIC_BJT = 1,
+    SAT_SMOOTH_HIFI = 2
+};
+
+#ifndef VIBE_SATURATION_MODE
+#define VIBE_SATURATION_MODE SAT_CLASSIC_BJT
+#endif
+
 static inline float clampf(float v, float lo, float hi) {
     return (v < lo) ? lo : ((v > hi) ? hi : v);
 }
@@ -263,6 +277,14 @@ public:
     bool mode_chorus = true;
 
 private:
+    struct SaturationState {
+        float prev_in = 0.0f;
+        float aa_up = 0.0f;
+        float aa_down = 0.0f;
+        float dc_x1 = 0.0f;
+        float dc_y1 = 0.0f;
+    };
+
     float *efxoutl;
     float *efxoutr;
     float lpanning = 1.0f, rpanning = 1.0f;
@@ -283,12 +305,17 @@ private:
     float on0[8], on1[8], od0[8], od1[8];
     uint32_t rng_seed = 0x13579BDFu;
     VibeUserParams smoothed_user;
+    SaturationState sat_state_l;
+    SaturationState sat_state_r;
+    float fb_lpf_l = 0.0f;
+    float fb_lpf_r = 0.0f;
 
     float vibefilter(float data, fparams *ftype);
     void modulate(float res_l, float res_r);
     void update_time_constants();
     void update_smoothed_user_params();
-    float bjt_shape(float data, float drive);
+    float nonlinear_shape(float data, float drive, SaturationState &state);
+    float feedback_shape(float data, float feedback, SaturationState &state, float &fb_lpf_state);
 };
 
 #if USER_INTERFACE
@@ -593,6 +620,10 @@ void Vibe::reseed(uint32_t seed) {
     lamp_state_r = 0.0f;
     fbl = 0.0f;
     fbr = 0.0f;
+    sat_state_l = {};
+    sat_state_r = {};
+    fb_lpf_l = 0.0f;
+    fb_lpf_r = 0.0f;
     sanitize_user_params(&params.user);
     smoothed_user = params.user;
     lfo.reseed(rng_seed ^ 0xA511E9B3u);
@@ -659,8 +690,63 @@ void Vibe::update_smoothed_user_params() {
     sanitize_user_params(&smoothed_user);
 }
 
-float Vibe::bjt_shape(float data, float drive) {
-    return fast_soft_clip(data * drive) * params.tuning.bjt_gain_trim;
+float Vibe::nonlinear_shape(float data, float drive, SaturationState &state) {
+    auto saturate = [](float x) -> float {
+        switch (VIBE_SATURATION_MODE) {
+            case SAT_CLASSIC_BJT: {
+                const float asym = x + 0.12f * x * x;
+                return tanhf(1.35f * asym);
+            }
+            case SAT_SMOOTH_HIFI: {
+                const float x2 = x * x;
+                return x * (27.0f + x2) / (27.0f + 9.0f * x2);
+            }
+            case SAT_FALLBACK_SOFT:
+            default:
+                return fast_soft_clip(x);
+        }
+    };
+
+    const float driven = data * drive;
+#if VIBE_ENABLE_LOCAL_2X_OVERSAMPLE
+    // Local 2x oversampling around the nonlinear shape to reduce foldback when driven hard.
+    const float up_alpha = 0.62f;
+    const float down_alpha = 0.55f;
+
+    const float x_mid = 0.5f * (state.prev_in + driven);
+    state.prev_in = driven;
+
+    state.aa_up += up_alpha * (x_mid - state.aa_up);
+    const float y0 = saturate(state.aa_up);
+
+    state.aa_up += up_alpha * (driven - state.aa_up);
+    const float y1 = saturate(state.aa_up);
+
+    float out = 0.5f * (y0 + y1);
+    state.aa_down += down_alpha * (out - state.aa_down);
+    out = state.aa_down;
+#else
+    float out = saturate(driven);
+#endif
+
+    // Lightweight DC blocker avoids low-frequency accumulation through the feedback loop.
+    const float dc_r = 0.995f;
+    const float dc = out - state.dc_x1 + dc_r * state.dc_y1;
+    state.dc_x1 = out;
+    state.dc_y1 = dc;
+    return dc * params.tuning.bjt_gain_trim;
+}
+
+float Vibe::feedback_shape(float data, float feedback, SaturationState &state, float &fb_lpf_state) {
+    const float fb_drive = 0.9f + 0.5f * feedback;
+    const float nonlinear_fb = nonlinear_shape(data, fb_drive, state);
+    const float fb_lpf = 0.22f;
+    fb_lpf_state += fb_lpf * (nonlinear_fb - fb_lpf_state);
+
+    // Dynamic damping softens runaway behavior as internal level grows.
+    const float level = fabsf(fb_lpf_state);
+    const float safety = 1.0f / (1.0f + 0.40f * level);
+    return clampf(fb_lpf_state * feedback * safety, -1.0f, 1.0f);
 }
 
 void Vibe::init_vibes() {
@@ -788,7 +874,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
 
     for (int i = 0; i < PERIOD; i++) {
         float dry_l = smpsl[i];
-        float input = bjt_shape(fbl + dry_l, input_drive);
+        float input = nonlinear_shape(fbl + dry_l, input_drive, sat_state_l);
 
         for (int j = 0; j < 4; j++) {
             float cvolt = vibefilter(input, &stage[j].ecvc) +
@@ -796,15 +882,15 @@ void Vibe::out(float *smpsl, float *smpsr) {
             cvolt = clampf(cvolt, -stage_limit, stage_limit);
             float ocvolt = clampf(vibefilter(cvolt, &stage[j].vcvo), -stage_limit, stage_limit);
             stage[j].oldcvolt = ocvolt;
-            input = bjt_shape(ocvolt + vibefilter(input, &stage[j].vevo), input_drive);
+            input = nonlinear_shape(ocvolt + vibefilter(input, &stage[j].vevo), input_drive, sat_state_l);
         }
 
-        fbl = fast_soft_clip(stage[3].oldcvolt * feedback);
+        fbl = feedback_shape(stage[3].oldcvolt, feedback, sat_state_l, fb_lpf_l);
         efxoutl[i] = output_gain * (mode_chorus ? lpanning * (dry_l * (1.0f - mix) + input * mix)
                                                 : lpanning * input);
 
         float dry_r = smpsr[i];
-        input = bjt_shape(fbr + dry_r, input_drive);
+        input = nonlinear_shape(fbr + dry_r, input_drive, sat_state_r);
 
         for (int j = 4; j < 8; j++) {
             float cvolt = vibefilter(input, &stage[j].ecvc) +
@@ -812,10 +898,10 @@ void Vibe::out(float *smpsl, float *smpsr) {
             cvolt = clampf(cvolt, -stage_limit, stage_limit);
             float ocvolt = clampf(vibefilter(cvolt, &stage[j].vcvo), -stage_limit, stage_limit);
             stage[j].oldcvolt = ocvolt;
-            input = bjt_shape(ocvolt + vibefilter(input, &stage[j].vevo), input_drive);
+            input = nonlinear_shape(ocvolt + vibefilter(input, &stage[j].vevo), input_drive, sat_state_r);
         }
 
-        fbr = fast_soft_clip(stage[7].oldcvolt * feedback);
+        fbr = feedback_shape(stage[7].oldcvolt, feedback, sat_state_r, fb_lpf_r);
         efxoutr[i] = output_gain * (mode_chorus ? rpanning * (dry_r * (1.0f - mix) + input * mix)
                                                 : rpanning * input);
     }
