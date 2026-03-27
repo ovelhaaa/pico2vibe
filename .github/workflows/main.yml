@@ -1,0 +1,98 @@
+name: Build desktop_tools and upload artifacts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "desktop_tools/**"
+      - "univibe_rp2350_dma.cpp"
+      - "scripts/**"
+      - ".github/workflows/desktop-tools.yml"
+  pull_request:
+    paths:
+      - "desktop_tools/**"
+      - "univibe_rp2350_dma.cpp"
+      - "scripts/**"
+      - ".github/workflows/desktop-tools.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-cli:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ python3 ffmpeg
+
+      - name: Configure
+        run: cmake -S desktop_tools -B build/desktop_tools -G Ninja
+
+      - name: Build
+        run: cmake --build build/desktop_tools -j
+
+      - name: Show build output
+        run: |
+          ls -lah build/desktop_tools || true
+          find build/desktop_tools -maxdepth 3 -type f | sort
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-tools-cli-linux
+          path: |
+            build/desktop_tools/univibe_cli
+            build/desktop_tools/univibe_cli.exe
+          if-no-files-found: warn
+          retention-days: 14
+
+  process-sample:
+    runs-on: ubuntu-24.04
+    needs: build-cli
+    if: ${{ hashFiles('desktop_tools/test_audio/*') != '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ python3 ffmpeg
+
+      - name: Configure
+        run: cmake -S desktop_tools -B build/desktop_tools -G Ninja
+
+      - name: Build
+        run: cmake --build build/desktop_tools -j
+
+      - name: Process sample audio
+        run: |
+          mkdir -p artifacts/audio
+          INPUT_FILE=$(find desktop_tools/test_audio -type f \( -iname "*.wav" -o -iname "*.mp3" \) | head -n 1)
+          echo "Using input: $INPUT_FILE"
+          build/desktop_tools/univibe_cli \
+            --input "$INPUT_FILE" \
+            --output artifacts/audio/output_classic.wav \
+            --mode chorus \
+            --rate 1.2 \
+            --depth 0.6 \
+            --width 0.8 \
+            --feedback 0.45 \
+            --seed 1 \
+            --wav-format pcm16
+
+      - name: Upload processed audio artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-tools-audio-output
+          path: artifacts/audio/
+          if-no-files-found: error
+          retention-days: 14
