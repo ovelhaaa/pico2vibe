@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <math.h>
+#include <array>
 
 #include "pico/stdlib.h"
 #include "hardware/clocks.h"
@@ -47,10 +48,6 @@
 #define fPERIOD         ((float)PERIOD)
 
 #define AUDIO_SYS_CLOCK_HZ 135475200u
-
-static inline float fast_soft_clip(float x) {
-    return x / (1.0f + fabsf(x));
-}
 
 static inline float clampf(float v, float lo, float hi) {
     return (v < lo) ? lo : ((v > hi) ? hi : v);
@@ -246,6 +243,11 @@ struct PhaseStage {
 
 class Vibe {
 public:
+    enum class DspQuality : uint8_t {
+        Optimized = 0,
+        High,
+    };
+
     Vibe(float *efxoutl_, float *efxoutr_);
     void out(float *smpsl, float *smpsr);
     void init_vibes();
@@ -255,6 +257,8 @@ public:
     void set_param_normalized(VibeParamId id, float normalized);
     float get_param(VibeParamId id) const;
     float get_param_normalized(VibeParamId id) const;
+    void set_quality_mode(DspQuality quality) { quality_mode = quality; }
+    DspQuality get_quality_mode() const { return quality_mode; }
 
     const VibeUserParams &user_params() const { return params.user; }
     const VibeUserParams &smoothed_user_params() const { return smoothed_user; }
@@ -283,11 +287,28 @@ private:
     float on0[8], on1[8], od0[8], od1[8];
     uint32_t rng_seed = 0x13579BDFu;
     VibeUserParams smoothed_user;
+    // Optimized uses a LUT-based soft clip to reduce per-sample divisions on RP2350.
+    // High keeps the direct nonlinearity for maximum numerical fidelity.
+    DspQuality quality_mode = DspQuality::Optimized;
+
+    static constexpr int kSoftClipLutSize = 257;
+    static constexpr float kSoftClipLutMin = -12.0f;
+    static constexpr float kSoftClipLutMax = 12.0f;
+    static constexpr float kSoftClipLutRange = (kSoftClipLutMax - kSoftClipLutMin);
+    static constexpr float kSoftClipLutScale = (float)(kSoftClipLutSize - 1) / kSoftClipLutRange;
+    static std::array<float, kSoftClipLutSize> soft_clip_lut;
+    static bool soft_clip_lut_ready;
 
     float vibefilter(float data, fparams *ftype);
     void modulate(float res_l, float res_r);
     void update_time_constants();
     void update_smoothed_user_params();
+    static void init_soft_clip_lut();
+    static inline float soft_clip_high_quality(float x) { return x / (1.0f + fabsf(x)); }
+    static inline float soft_clip_approx(float x);
+    inline float soft_clip(float x) const {
+        return (quality_mode == DspQuality::High) ? soft_clip_high_quality(x) : soft_clip_approx(x);
+    }
     float bjt_shape(float data, float drive);
 };
 
@@ -563,7 +584,33 @@ private:
 };
 #endif
 
+std::array<float, Vibe::kSoftClipLutSize> Vibe::soft_clip_lut = {};
+bool Vibe::soft_clip_lut_ready = false;
+
+void Vibe::init_soft_clip_lut() {
+    if (soft_clip_lut_ready) {
+        return;
+    }
+
+    for (int i = 0; i < kSoftClipLutSize; ++i) {
+        const float x = kSoftClipLutMin + ((float)i / (float)(kSoftClipLutSize - 1)) * kSoftClipLutRange;
+        soft_clip_lut[i] = soft_clip_high_quality(x);
+    }
+    soft_clip_lut_ready = true;
+}
+
+inline float Vibe::soft_clip_approx(float x) {
+    if (x <= kSoftClipLutMin) return soft_clip_lut.front();
+    if (x >= kSoftClipLutMax) return soft_clip_lut.back();
+
+    const float pos = (x - kSoftClipLutMin) * kSoftClipLutScale;
+    const int idx = (int)pos;
+    const float frac = pos - (float)idx;
+    return soft_clip_lut[idx] + (soft_clip_lut[idx + 1] - soft_clip_lut[idx]) * frac;
+}
+
 Vibe::Vibe(float *efxoutl_, float *efxoutr_) : efxoutl(efxoutl_), efxoutr(efxoutr_) {
+    init_soft_clip_lut();
     sanitize_user_params(&params.user);
     smoothed_user = params.user;
     lfo.reseed(rng_seed ^ 0xA511E9B3u);
@@ -660,7 +707,7 @@ void Vibe::update_smoothed_user_params() {
 }
 
 float Vibe::bjt_shape(float data, float drive) {
-    return fast_soft_clip(data * drive) * params.tuning.bjt_gain_trim;
+    return soft_clip(data * drive) * params.tuning.bjt_gain_trim;
 }
 
 void Vibe::init_vibes() {
@@ -691,6 +738,7 @@ void Vibe::init_vibes() {
 }
 
 void Vibe::modulate(float res_l, float res_r) {
+    // Per-block coefficient update: keep expensive analog-model math out of the per-sample loop.
     for (int i = 0; i < 8; i++) {
         float base_res = (i < 4) ? res_l : res_r;
         // Clamp the stage LDR emulation after mismatch so the network never sees non-physical extremes.
@@ -708,11 +756,14 @@ void Vibe::modulate(float res_l, float res_r) {
         float ecn1_val = k * gain_bjt * R1 * cd1_val * C2 / (currentRv * C2pC1);
         float on1_val  = k * currentRv * C2;
 
-        float cd0_val  = 1.0f + C1[i] / C2;
+        const float c1_over_c2 = C1[i] / C2;
+        const float c2_over_c1 = C2 / C1[i];
+
+        float cd0_val  = 1.0f + c1_over_c2;
         float ecd0_val = 1.0f;
-        float od0_val  = 1.0f + C2 / C1[i];
-        float ed0_val  = 1.0f + C1[i] / C2;
-        float cn0_val  = gain_bjt * (1.0f + C1[i] / C2);
+        float od0_val  = 1.0f + c2_over_c1;
+        float ed0_val  = 1.0f + c1_over_c2;
+        float cn0_val  = gain_bjt * (1.0f + c1_over_c2);
         float on0_val  = 1.0f;
         float ecn0_val = 0.0f;
 
@@ -751,9 +802,12 @@ void Vibe::out(float *smpsl, float *smpsr) {
     const float sweep_max = smoothed_user.sweep_max;
     const float feedback = smoothed_user.feedback;
     const float mix = smoothed_user.mix;
+    const float dry_mix = 1.0f - mix;
     const float input_drive = smoothed_user.input_drive;
     const float output_gain = smoothed_user.output_gain;
     const float stage_limit = clampf(params.tuning.stage_state_limit, 2.0f, 12.0f);
+    const float gain_l = output_gain * lpanning;
+    const float gain_r = output_gain * rpanning;
 
     float target_l = sweep_min + depth * lfol * (sweep_max - sweep_min);
     float target_r = sweep_min + depth * lfor * (sweep_max - sweep_min);
@@ -799,9 +853,9 @@ void Vibe::out(float *smpsl, float *smpsr) {
             input = bjt_shape(ocvolt + vibefilter(input, &stage[j].vevo), input_drive);
         }
 
-        fbl = fast_soft_clip(stage[3].oldcvolt * feedback);
-        efxoutl[i] = output_gain * (mode_chorus ? lpanning * (dry_l * (1.0f - mix) + input * mix)
-                                                : lpanning * input);
+        fbl = soft_clip(stage[3].oldcvolt * feedback);
+        const float wet_l = mode_chorus ? (dry_l * dry_mix + input * mix) : input;
+        efxoutl[i] = gain_l * wet_l;
 
         float dry_r = smpsr[i];
         input = bjt_shape(fbr + dry_r, input_drive);
@@ -815,9 +869,9 @@ void Vibe::out(float *smpsl, float *smpsr) {
             input = bjt_shape(ocvolt + vibefilter(input, &stage[j].vevo), input_drive);
         }
 
-        fbr = fast_soft_clip(stage[7].oldcvolt * feedback);
-        efxoutr[i] = output_gain * (mode_chorus ? rpanning * (dry_r * (1.0f - mix) + input * mix)
-                                                : rpanning * input);
+        fbr = soft_clip(stage[7].oldcvolt * feedback);
+        const float wet_r = mode_chorus ? (dry_r * dry_mix + input * mix) : input;
+        efxoutr[i] = gain_r * wet_r;
     }
 }
 
