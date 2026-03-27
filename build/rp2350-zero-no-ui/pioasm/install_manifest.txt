@@ -1,0 +1,5 @@
+C:/progs/pico/pico2vibe/build/rp2350-zero-no-ui/pioasm-install/pioasm/pioasm.exe
+C:/progs/pico/pico2vibe/build/rp2350-zero-no-ui/pioasm-install/pioasm/pioasmTargets.cmake
+C:/progs/pico/pico2vibe/build/rp2350-zero-no-ui/pioasm-install/pioasm/pioasmTargets-release.cmake
+C:/progs/pico/pico2vibe/build/rp2350-zero-no-ui/pioasm-install/pioasm/pioasmConfig.cmake
+C:/progs/pico/pico2vibe/build/rp2350-zero-no-ui/pioasm-install/pioasm/pioasmConfigVersion.cmake

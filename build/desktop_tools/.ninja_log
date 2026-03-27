@@ -1,0 +1,25 @@
+# ninja log v6
+31	1064	7945648270772894	generated/vibe_core.generated.hpp	e3ab2e6991dbd5ea
+31	1064	7945648270772894	C:/progs/pico/pico2vibe/build/desktop_tools/generated/vibe_core.generated.hpp	e3ab2e6991dbd5ea
+1238	2908	7945648273034331	CMakeFiles/univibe_cli.dir/src/processor.cpp.obj	926cb53023a28419
+1270	3270	7945648273094349	CMakeFiles/univibe_cli.dir/src/wav_io.cpp.obj	94c2f117d9f0c94d
+1232	3315	7945648272714370	CMakeFiles/univibe_cli.dir/src/main.cpp.obj	5d18ee6f799c09de
+3315	3560	7945648293542037	univibe_cli.exe	91cd7f957ba0200a
+50	1292	7945703473129398	CMakeFiles/univibe_cli.dir/src/processor.cpp.obj	926cb53023a28419
+58	1663	7945703473199361	CMakeFiles/univibe_cli.dir/src/wav_io.cpp.obj	94c2f117d9f0c94d
+42	1815	7945703473039414	CMakeFiles/univibe_cli.dir/src/main.cpp.obj	5d18ee6f799c09de
+1835	2111	7945703490971579	univibe_cli.exe	91cd7f957ba0200a
+47	3113	7945703944515022	CMakeFiles/univibe_cli.dir/src/processor.cpp.obj	926cb53023a28419
+3113	3571	7945703975173487	univibe_cli.exe	91cd7f957ba0200a
+46	1788	7945764779385154	CMakeFiles/univibe_cli.dir/src/wav_io.cpp.obj	94c2f117d9f0c94d
+39	2067	7945764779315151	CMakeFiles/univibe_cli.dir/src/main.cpp.obj	5d18ee6f799c09de
+2067	2320	7945764799591883	univibe_cli.exe	91cd7f957ba0200a
+28	930	7945771011334743	CMakeFiles/univibe_cli.dir/src/processor.cpp.obj	926cb53023a28419
+931	1121	7945771020358463	univibe_cli.exe	91cd7f957ba0200a
+26	702	7945771635397654	CMakeFiles/univibe_cli.dir/src/processor.cpp.obj	926cb53023a28419
+702	867	7945771642151464	univibe_cli.exe	91cd7f957ba0200a
+45	957	7945777306647614	CMakeFiles/univibe_cli.dir/src/processor.cpp.obj	926cb53023a28419
+38	1363	7945777306568121	CMakeFiles/univibe_cli.dir/src/main.cpp.obj	5d18ee6f799c09de
+1363	1585	7945777319835773	univibe_cli.exe	91cd7f957ba0200a
+136	2796	7945910795243548	CMakeFiles/univibe_cli.dir/src/processor.cpp.obj	926cb53023a28419
+2797	3314	7945910821842783	univibe_cli.exe	91cd7f957ba0200a

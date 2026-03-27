@@ -1,0 +1,457 @@
+:root {
+  --bg: #f4efe4;
+  --panel: rgba(255, 250, 241, 0.86);
+  --panel-strong: #fffaf2;
+  --ink: #1a1b1e;
+  --muted: #60584e;
+  --accent: #c0572c;
+  --accent-soft: #e9a15f;
+  --teal: #0b6e69;
+  --line: rgba(49, 44, 36, 0.14);
+  --shadow: 0 20px 60px rgba(39, 24, 5, 0.13);
+  --ok: #82f5a6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Space Grotesk", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top left, rgba(238, 153, 87, 0.32), transparent 28%),
+    radial-gradient(circle at top right, rgba(17, 141, 130, 0.18), transparent 24%),
+    linear-gradient(180deg, #efe5d4 0%, #f5f0e7 45%, #ebe0cf 100%);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.app-shell {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 32px 20px 48px;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 24px;
+  margin-bottom: 24px;
+  align-items: start;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--teal);
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(2.2rem, 4vw, 4.6rem);
+  line-height: 0.95;
+}
+
+.hero-copy {
+  max-width: 70ch;
+  margin: 14px 0 0;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.hero-status {
+  display: grid;
+  gap: 14px;
+}
+
+.status-card,
+.runtime-card {
+  padding: 16px 18px;
+  border-radius: 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+}
+
+.status-label,
+.runtime-label,
+.led-title {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-family: "IBM Plex Mono", monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+}
+
+.panel-head {
+  padding: 20px 22px 0;
+}
+
+.panel-head h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.panel-head p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.transport-panel {
+  grid-column: span 12;
+}
+
+.hardware-panel {
+  grid-column: span 5;
+}
+
+.control-panel {
+  grid-column: span 7;
+}
+
+.tuning-panel,
+.log-panel {
+  grid-column: span 6;
+}
+
+.upload-row,
+.transport-buttons,
+.wave-grid,
+.hardware-sim,
+.controls-grid,
+.event-log {
+  padding: 20px 22px 22px;
+}
+
+.upload-row {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 18px;
+  align-items: center;
+}
+
+.file-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-soft) 100%);
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 12px 25px rgba(192, 87, 44, 0.25);
+}
+
+.file-button input {
+  display: none;
+}
+
+.file-meta {
+  display: grid;
+  gap: 6px;
+}
+
+.file-meta strong {
+  font-size: 1rem;
+}
+
+.file-meta span {
+  color: var(--muted);
+}
+
+.transport-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 0;
+}
+
+button {
+  border: 1px solid var(--line);
+  background: var(--panel-strong);
+  color: var(--ink);
+  border-radius: 16px;
+  min-height: 46px;
+  padding: 0 16px;
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+}
+
+button:hover:enabled {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 22px rgba(28, 24, 19, 0.08);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+button.primary {
+  background: linear-gradient(135deg, var(--teal), #4db9aa);
+  color: white;
+  border: none;
+}
+
+.wave-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  padding-top: 0;
+}
+
+.scope-card {
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.48);
+  border: 1px solid var(--line);
+  padding: 16px;
+}
+
+.scope-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.scope-head h3 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(8, 21, 24, 0.95), rgba(16, 34, 32, 0.92));
+}
+
+.hardware-sim {
+  display: grid;
+  gap: 18px;
+}
+
+.pedal-face {
+  border-radius: 28px;
+  padding: 22px;
+  color: #fdf7ef;
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.1), transparent 22%),
+    linear-gradient(160deg, #17363e 0%, #0c222a 65%, #152128 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+
+.face-label {
+  margin-bottom: 18px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(255, 246, 232, 0.72);
+}
+
+.led-stack {
+  display: flex;
+  gap: 24px;
+}
+
+.led-block {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
+.led {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #2d342f;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.2);
+}
+
+.led.is-on {
+  background: radial-gradient(circle, #f9ffb8 0%, var(--ok) 48%, #3adf7d 100%);
+  box-shadow: 0 0 18px rgba(130, 245, 166, 0.58);
+}
+
+.led.is-warm {
+  background: radial-gradient(circle, #fff6ce 0%, #ffde8b 48%, #ffb12e 100%);
+  box-shadow: 0 0 18px rgba(255, 198, 91, 0.58);
+}
+
+.encoder-wrap {
+  margin-top: 30px;
+  display: grid;
+  grid-template-columns: 64px 1fr 64px;
+  gap: 14px;
+  align-items: center;
+}
+
+.encoder-button {
+  min-height: 140px;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 30% 30%, #4d6672 0%, #243841 38%, #112027 78%, #091217 100%);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  display: grid;
+  place-items: center;
+  padding: 12px;
+}
+
+.encoder-button span {
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.encoder-button small,
+.encoder-help,
+.led-block small {
+  color: rgba(255, 246, 232, 0.72);
+}
+
+.encoder-arrow {
+  min-height: 64px;
+  border-radius: 20px;
+  font-size: 1.35rem;
+  color: white;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.encoder-help {
+  margin-top: 16px;
+  display: grid;
+  gap: 4px;
+  font-size: 0.9rem;
+}
+
+.runtime-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.controls-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.control-card {
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.42);
+  padding: 16px;
+}
+
+.control-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.control-name {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.control-live {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.83rem;
+  color: var(--muted);
+}
+
+.control-card input[type="range"] {
+  width: 100%;
+}
+
+.control-meta {
+  margin-top: 8px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.event-log {
+  margin: 0;
+  min-height: 240px;
+  border-top: 1px solid var(--line);
+  background: rgba(19, 26, 30, 0.96);
+  color: #dce6ee;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 1100px) {
+  .hero,
+  .wave-grid,
+  .runtime-cards,
+  .controls-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hardware-panel,
+  .control-panel,
+  .tuning-panel,
+  .log-panel {
+    grid-column: span 12;
+  }
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    padding: 20px 14px 36px;
+  }
+
+  .upload-row {
+    grid-template-columns: 1fr;
+  }
+
+  .encoder-wrap {
+    grid-template-columns: 52px 1fr 52px;
+  }
+
+  .transport-buttons {
+    flex-direction: column;
+  }
+}

@@ -1,0 +1,7 @@
+C:/progs/pico/pico2vibe/build/rp2350-zero-no-ui/_deps/picotool/picotool.exe
+C:/progs/pico/pico2vibe/build/rp2350-zero-no-ui/_deps/picotool/picotoolTargets.cmake
+C:/progs/pico/pico2vibe/build/rp2350-zero-no-ui/_deps/picotool/picotoolTargets-release.cmake
+C:/progs/pico/pico2vibe/build/rp2350-zero-no-ui/_deps/picotool/picotoolConfig.cmake
+C:/progs/pico/pico2vibe/build/rp2350-zero-no-ui/_deps/picotool/picotoolConfigVersion.cmake
+C:/progs/pico/pico2vibe/build/rp2350-zero-no-ui/_deps/picotool/enc_bootloader.elf
+C:/progs/pico/pico2vibe/build/rp2350-zero-no-ui/_deps/picotool/enc_bootloader_mbedtls.elf

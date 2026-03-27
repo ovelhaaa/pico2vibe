@@ -1,0 +1,7 @@
+C:/progs/pico/pico2vibe/build/rp2350-zero/pioasm/CMakeFiles/pioasm.dir
+C:/progs/pico/pico2vibe/build/rp2350-zero/pioasm/CMakeFiles/edit_cache.dir
+C:/progs/pico/pico2vibe/build/rp2350-zero/pioasm/CMakeFiles/rebuild_cache.dir
+C:/progs/pico/pico2vibe/build/rp2350-zero/pioasm/CMakeFiles/list_install_components.dir
+C:/progs/pico/pico2vibe/build/rp2350-zero/pioasm/CMakeFiles/install.dir
+C:/progs/pico/pico2vibe/build/rp2350-zero/pioasm/CMakeFiles/install/local.dir
+C:/progs/pico/pico2vibe/build/rp2350-zero/pioasm/CMakeFiles/install/strip.dir

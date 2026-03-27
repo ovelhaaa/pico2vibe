@@ -1,0 +1,27 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 13,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "rp2350-zero",
+      "displayName": "RP2350 Zero (Release)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/rp2350-zero",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "PICO_PLATFORM": "rp2350",
+        "PICO_BOARD": "pico2"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "rp2350-zero",
+      "configurePreset": "rp2350-zero"
+    }
+  ]
+}

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pico2Vibe Web Bench</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">RP2350 Engine Mirror</p>
+        <h1>Pico2Vibe Web Bench</h1>
+        <p class="hero-copy">
+          Bancada web para testar offline a engine atual do efeito do RP2350. O processamento roda em blocos de 32 samples, fixa em 44.1 kHz e replica o comportamento de chorus, vibrato, encoder e LEDs.
+        </p>
+      </div>
+      <div class="hero-status">
+        <div class="status-card">
+          <span class="status-label">Engine</span>
+          <strong id="engine-status">Aguardando arquivo</strong>
+        </div>
+        <div class="status-card">
+          <span class="status-label">Sample Rate</span>
+          <strong id="sample-rate-status">44.1 kHz fixed</strong>
+        </div>
+        <div class="status-card">
+          <span class="status-label">Block Size</span>
+          <strong>32</strong>
+        </div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel transport-panel">
+        <div class="panel-head">
+          <h2>Audio</h2>
+          <p>Importe um WAV ou MP3, renderize offline e compare A/B.</p>
+        </div>
+
+        <div class="upload-row">
+          <label class="file-button">
+            <input id="file-input" type="file" accept=".wav,.mp3,audio/*">
+            <span>Carregar arquivo</span>
+          </label>
+          <div class="file-meta">
+            <strong id="file-name">Nenhum arquivo</strong>
+            <span id="file-meta">O arquivo será convertido para estéreo 44.1 kHz antes do render.</span>
+          </div>
+        </div>
+
+        <div class="transport-buttons">
+          <button id="render-button" class="primary" disabled>Renderizar RP2350</button>
+          <button id="play-input-button" disabled>Ouvir entrada</button>
+          <button id="play-output-button" disabled>Ouvir saída</button>
+          <button id="stop-button" disabled>Parar</button>
+          <button id="export-button" disabled>Exportar WAV</button>
+        </div>
+
+        <div class="wave-grid">
+          <div class="scope-card">
+            <div class="scope-head">
+              <h3>Entrada</h3>
+              <span id="input-rms">RMS --</span>
+            </div>
+            <canvas id="input-waveform" width="900" height="180"></canvas>
+          </div>
+          <div class="scope-card">
+            <div class="scope-head">
+              <h3>Saída</h3>
+              <span id="output-rms">RMS --</span>
+            </div>
+            <canvas id="output-waveform" width="900" height="180"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel hardware-panel">
+        <div class="panel-head">
+          <h2>Hardware UI</h2>
+          <p>Simulação do encoder KY-040, botão com short/long press e LEDs de estado do firmware.</p>
+        </div>
+
+        <div class="hardware-sim">
+          <div class="pedal-face">
+            <div class="face-label">RP2350 Zero Front Panel</div>
+            <div class="led-stack">
+              <div class="led-block">
+                <span class="led-title">PARAM</span>
+                <span id="led-param" class="led"></span>
+                <small id="led-param-label">Speed</small>
+              </div>
+              <div class="led-block">
+                <span class="led-title">MODE</span>
+                <span id="led-mode" class="led"></span>
+                <small id="led-mode-label">Chorus</small>
+              </div>
+            </div>
+
+            <div class="encoder-wrap">
+              <button id="encoder-left" class="encoder-arrow" aria-label="Encoder anti-horário">◀</button>
+              <button id="encoder-button" class="encoder-button" aria-label="Encoder push button">
+                <span>ENC</span>
+                <small>click / hold</small>
+              </button>
+              <button id="encoder-right" class="encoder-arrow" aria-label="Encoder horário">▶</button>
+            </div>
+
+            <div class="encoder-help">
+              <span>Click curto: alterna Speed/Depth</span>
+              <span>Hold 700 ms: alterna Chorus/Vibrato</span>
+            </div>
+          </div>
+
+          <div class="runtime-cards">
+            <div class="runtime-card">
+              <span class="runtime-label">Encoder Target</span>
+              <strong id="encoder-target">Speed</strong>
+            </div>
+            <div class="runtime-card">
+              <span class="runtime-label">Mode</span>
+              <strong id="mode-status">Chorus</strong>
+            </div>
+            <div class="runtime-card">
+              <span class="runtime-label">Virtual Clock</span>
+              <strong id="clock-status">idle</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel control-panel">
+        <div class="panel-head">
+          <h2>Parameters</h2>
+          <p>Os defaults e limites abaixo seguem a engine atual do firmware. A coluna “Live” mostra o valor suavizado por bloco.</p>
+        </div>
+
+        <div id="controls-grid" class="controls-grid"></div>
+      </section>
+
+      <section class="panel tuning-panel">
+        <div class="panel-head">
+          <h2>Advanced Bench</h2>
+          <p>Tuning interno da simulação para investigar o comportamento analógico-modelado sem tocar no firmware.</p>
+        </div>
+        <div id="tuning-grid" class="controls-grid tuning-grid"></div>
+      </section>
+
+      <section class="panel log-panel">
+        <div class="panel-head">
+          <h2>Render Log</h2>
+          <p>Métricas do processamento offline e estado atual da bancada.</p>
+        </div>
+        <pre id="event-log" class="event-log"></pre>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

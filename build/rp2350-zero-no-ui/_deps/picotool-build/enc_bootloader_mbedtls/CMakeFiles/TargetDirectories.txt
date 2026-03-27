@@ -1,0 +1,2 @@
+C:/progs/pico/pico2vibe/build/rp2350-zero-no-ui/_deps/picotool-build/enc_bootloader_mbedtls/CMakeFiles/edit_cache.dir
+C:/progs/pico/pico2vibe/build/rp2350-zero-no-ui/_deps/picotool-build/enc_bootloader_mbedtls/CMakeFiles/rebuild_cache.dir

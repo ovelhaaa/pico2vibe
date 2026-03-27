@@ -1,0 +1,100 @@
+.program i2s_master_clk
+.side_set 2
+
+; sideset bit0 = BCLK (GPIO16)
+; sideset bit1 = LRCLK (GPIO17)
+;
+; 32 bits left + 32 bits right
+; 2 instruções por bit => BCLK = SMclk / 2
+
+.wrap_target
+    ; Canal Left: LRCLK = 0
+    set x, 31         side 0b00   ; LRCLK=0, BCLK=0
+left_loop:
+    nop               side 0b01   ; BCLK=1
+    jmp x-- left_loop side 0b00   ; BCLK=0
+
+    ; Canal Right: LRCLK = 1
+    set x, 31         side 0b10   ; LRCLK=1, BCLK=0
+right_loop:
+    nop               side 0b11   ; BCLK=1
+    jmp x-- right_loop side 0b10  ; BCLK=0
+.wrap
+
+
+.program i2s_tx_slave
+; Referência:
+;   BCLK  = GPIO16
+;   LRCLK = GPIO17
+; Saída de dados:
+;   DOUT  = GPIO18
+;
+; Dado muda na borda de descida do BCLK.
+; 1 word de 32 bits por canal.
+;
+; Configuração esperada no C:
+;   autopull = 32
+;   shift left / MSB first
+
+.wrap_target
+left_sync:
+    wait 0 gpio 17        ; LRCLK = 0 => Left
+    wait 0 gpio 16
+    wait 1 gpio 16        ; atraso de 1 bit do protocolo I2S
+    set x, 31
+left_bits:
+    wait 0 gpio 16
+    out pins, 1
+    wait 1 gpio 16
+    jmp x-- left_bits
+
+right_sync:
+    wait 1 gpio 17        ; LRCLK = 1 => Right
+    wait 0 gpio 16
+    wait 1 gpio 16
+    set x, 31
+right_bits:
+    wait 0 gpio 16
+    out pins, 1
+    wait 1 gpio 16
+    jmp x-- right_bits
+.wrap
+
+
+.program i2s_rx_slave
+; Referência:
+;   BCLK  = GPIO16
+;   LRCLK = GPIO17
+; Entrada de dados:
+;   DIN   = GPIO19
+;
+; Dado é amostrado na borda de subida do BCLK.
+; 1 word de 32 bits por canal.
+;
+; Configuração esperada no C:
+;   autopush = 32
+;   shift left / MSB first
+
+.wrap_target
+left_sync:
+    wait 0 gpio 17        ; LRCLK = 0 => Left
+    wait 0 gpio 16
+    wait 1 gpio 16        ; atraso de 1 bit do protocolo I2S
+    set x, 31
+left_bits:
+    wait 0 gpio 16
+    wait 1 gpio 16
+    in pins, 1
+    jmp x-- left_bits
+
+right_sync:
+    wait 1 gpio 17        ; LRCLK = 1 => Right
+    wait 0 gpio 16
+    wait 1 gpio 16
+    set x, 31
+right_bits:
+    wait 0 gpio 16
+    wait 1 gpio 16
+    in pins, 1
+    jmp x-- right_bits
+.wrap

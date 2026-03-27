@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/progs/pico/pico2vibe/build/rp2350-zero-no-ui/_deps/picotool-subbuild/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
