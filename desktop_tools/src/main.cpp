@@ -26,9 +26,16 @@ void print_usage() {
         << "  --mode <chorus|vibrato>   (padrao: chorus)\n"
         << "  --rate <hz>               (padrao: 1.2)\n"
         << "  --depth <0..1>            (padrao: 0.6)\n"
-        << "  --width <0..1>            (padrao: 0.8)\n"
         << "  --feedback <0..0.99>      (padrao: 0.45)\n"
-        << "  --mix <0..1>              (padrao: 1.0)\n"
+        << "  --mix <0..1>              (padrao: 0.5)\n"
+        << "  --preset <classic_chorus|classic_vibrato|deep_throb|modern_wide>\n"
+        << "  --engine <legacy|improved> (padrao: improved)\n"
+        << "  --ab <none|difference>    (padrao: none)\n"
+        << "  --drive <0.5..6>          (padrao: 3.5)\n"
+        << "  --output-gain <0.25..2>   (padrao: 1.0)\n"
+        << "  --tone-tilt <-1..1>       (padrao: 0.0)\n"
+        << "  --pre-hpf <8..160>        (padrao: 22)\n"
+        << "  --lfo-skew <-0.45..0.45>  (padrao: 0.1)\n"
         << "  --seed <int>              (padrao: 1)\n"
         << "  --wav-format <pcm16|float32> (padrao: pcm16)\n"
         << "  --help\n";
@@ -117,12 +124,37 @@ int main(int argc, char** argv) {
                 params.rate_hz = std::stof(next());
             } else if (arg == "--depth") {
                 params.depth = std::stof(next());
-            } else if (arg == "--width") {
-                params.width = std::stof(next());
             } else if (arg == "--feedback") {
                 params.feedback = std::stof(next());
             } else if (arg == "--mix") {
                 params.mix = std::stof(next());
+            } else if (arg == "--preset") {
+                const std::string p = next();
+                if (p == "classic_chorus") params.preset = UnivibeParams::Preset::classic_chorus;
+                else if (p == "classic_vibrato") params.preset = UnivibeParams::Preset::classic_vibrato;
+                else if (p == "deep_throb") params.preset = UnivibeParams::Preset::deep_throb;
+                else if (p == "modern_wide") params.preset = UnivibeParams::Preset::modern_wide;
+                else throw std::runtime_error("Preset invalido");
+            } else if (arg == "--engine") {
+                const std::string e = next();
+                if (e == "legacy") params.engine_mode = UnivibeParams::EngineMode::legacy;
+                else if (e == "improved") params.engine_mode = UnivibeParams::EngineMode::improved;
+                else throw std::runtime_error("Engine invalido: use legacy|improved");
+            } else if (arg == "--ab") {
+                const std::string ab = next();
+                if (ab == "none") params.compare_mode = UnivibeParams::CompareMode::none;
+                else if (ab == "difference") params.compare_mode = UnivibeParams::CompareMode::difference;
+                else throw std::runtime_error("ab invalido: use none|difference");
+            } else if (arg == "--drive") {
+                params.input_drive = std::stof(next());
+            } else if (arg == "--output-gain") {
+                params.output_gain = std::stof(next());
+            } else if (arg == "--tone-tilt") {
+                params.tone_tilt = std::stof(next());
+            } else if (arg == "--pre-hpf") {
+                params.pre_hpf_hz = std::stof(next());
+            } else if (arg == "--lfo-skew") {
+                params.lfo_skew = std::stof(next());
             } else if (arg == "--seed") {
                 params.seed = static_cast<uint32_t>(std::stoul(next()));
             } else if (arg == "--wav-format") {
@@ -148,6 +180,7 @@ int main(int argc, char** argv) {
 
         DesktopUnivibeProcessor processor(params);
         processor.process_in_place(audio.left, audio.right);
+        const AudioMetrics m = processor.last_metrics();
 
         const fs::path out_path(output);
         fs::path out_wav_path = out_path;
@@ -165,6 +198,10 @@ int main(int argc, char** argv) {
         maybe_convert_to_non_wav(out_path, out_wav_path);
 
         std::cout << "Processamento concluido: " << output << "\n";
+        std::cout << "Metrics peak=" << m.peak
+                  << " rms=" << m.rms
+                  << " clipping_count=" << m.clipping_count
+                  << " dc_offset=" << m.dc_offset << "\n";
     } catch (const std::exception& e) {
         std::cerr << "Erro: " << e.what() << "\n";
         if (!temp_in_wav.empty()) {
