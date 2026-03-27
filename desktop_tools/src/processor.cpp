@@ -19,6 +19,28 @@ float clamp_finite(float v, float lo, float hi, float fallback = 0.0f) {
     return std::max(lo, std::min(hi, v));
 }
 
+AudioMetrics compute_metrics(const std::vector<float>& left, const std::vector<float>& right) {
+    AudioMetrics m{};
+    if (left.empty()) {
+        return m;
+    }
+
+    long double sum_sq = 0.0;
+    long double sum = 0.0;
+    for (size_t i = 0; i < left.size(); ++i) {
+        const float mono = 0.5f * (left[i] + right[i]);
+        const float abs_mono = std::fabs(mono);
+        if (abs_mono > m.peak) m.peak = abs_mono;
+        if (abs_mono >= 0.999f) m.clipping_count++;
+        sum_sq += static_cast<long double>(mono) * static_cast<long double>(mono);
+        sum += mono;
+    }
+
+    m.rms = static_cast<float>(std::sqrt(sum_sq / static_cast<long double>(left.size())));
+    m.dc_offset = static_cast<float>(sum / static_cast<long double>(left.size()));
+    return m;
+}
+
 void sanitize_vibe_state(Vibe* vibe) {
     vibe->fbl = clamp_finite(vibe->fbl, -0.92f, 0.92f, 0.0f);
     vibe->fbr = clamp_finite(vibe->fbr, -0.92f, 0.92f, 0.0f);
@@ -28,7 +50,6 @@ void sanitize_vibe_state(Vibe* vibe) {
 
     for (int i = 0; i < 8; ++i) {
         if (!std::isfinite(vibe->stage[i].oldcvolt)) vibe->stage[i].oldcvolt = 0.0f;
-
         if (!std::isfinite(vibe->stage[i].vc.x1)) vibe->stage[i].vc.x1 = 0.0f;
         if (!std::isfinite(vibe->stage[i].vc.y1)) vibe->stage[i].vc.y1 = 0.0f;
         if (!std::isfinite(vibe->stage[i].vcvo.x1)) vibe->stage[i].vcvo.x1 = 0.0f;
@@ -40,6 +61,16 @@ void sanitize_vibe_state(Vibe* vibe) {
     }
 }
 
+VibeVoicing map_preset(UnivibeParams::Preset p) {
+    switch (p) {
+        case UnivibeParams::Preset::classic_vibrato: return VibeVoicing::ClassicVibrato;
+        case UnivibeParams::Preset::deep_throb: return VibeVoicing::DeepThrob;
+        case UnivibeParams::Preset::modern_wide: return VibeVoicing::ModernWide;
+        case UnivibeParams::Preset::classic_chorus:
+        default: return VibeVoicing::ClassicChorus;
+    }
+}
+
 }  // namespace
 
 struct DesktopUnivibeProcessor::Impl {
@@ -47,28 +78,53 @@ struct DesktopUnivibeProcessor::Impl {
     std::array<float, PERIOD> in_r{};
     std::array<float, PERIOD> out_l{};
     std::array<float, PERIOD> out_r{};
-    Vibe* vibe = nullptr;
-    float mix = 1.0f;
-    bool user_chorus = true;
+    std::array<float, PERIOD> diff_l{};
+    std::array<float, PERIOD> diff_r{};
+    Vibe* improved = nullptr;
+    Vibe* legacy = nullptr;
+    UnivibeParams user{};
+    AudioMetrics metrics{};
 
-    explicit Impl(const UnivibeParams& p) {
+    explicit Impl(const UnivibeParams& p) : user(p) {
         std::srand(p.seed);
-        vibe = new Vibe(out_l.data(), out_r.data());
+        improved = new Vibe(out_l.data(), out_r.data());
+        improved->reseed(p.seed);
+        improved->set_voicing(map_preset(p.preset));
+        improved->set_param(VibeParamId::Depth, p.depth);
+        improved->set_param(VibeParamId::Feedback, p.feedback);
+        improved->set_param(VibeParamId::Mix, p.mix);
+        improved->set_param(VibeParamId::LfoRateHz, p.rate_hz);
+        improved->set_param(VibeParamId::InputDrive, p.input_drive);
+        improved->set_param(VibeParamId::OutputGain, p.output_gain);
+        improved->set_param(VibeParamId::ToneTilt, p.tone_tilt);
+        improved->set_param(VibeParamId::PreHpfHz, p.pre_hpf_hz);
+        improved->set_param(VibeParamId::LfoSkew, p.lfo_skew);
+        improved->set_param(VibeParamId::SatAsymmetry, p.sat_asymmetry);
+        improved->set_param(VibeParamId::SatOutTrim, p.sat_out_trim);
+        improved->mode_chorus = p.mode_chorus;
 
-        // We always run the core in vibrato mode (wet only) and do the dry/wet
-        // blend in the host wrapper. This avoids double dry-path mixing.
-        vibe->mode_chorus = false;
-        vibe->fdepth = p.depth;
-        vibe->fwidth = p.width;
-        vibe->fb = p.feedback;
-        vibe->lfo.setFreq(p.rate_hz);
-        mix = p.mix;
-        user_chorus = p.mode_chorus;
+        if (p.engine_mode == UnivibeParams::EngineMode::legacy || p.compare_mode == UnivibeParams::CompareMode::difference) {
+            legacy = new Vibe(diff_l.data(), diff_r.data());
+            legacy->reseed(p.seed);
+            legacy->set_voicing(VibeVoicing::ClassicChorus);
+            legacy->params.lfo_shape = LfoShape::Legacy;
+            legacy->params.feedback_color = FeedbackColor::Flat;
+            legacy->params.legacy_saturation = true;
+            legacy->set_param(VibeParamId::Depth, p.depth);
+            legacy->set_param(VibeParamId::Feedback, p.feedback);
+            legacy->set_param(VibeParamId::Mix, p.mix);
+            legacy->set_param(VibeParamId::LfoRateHz, p.rate_hz);
+            legacy->set_param(VibeParamId::ToneTilt, 0.0f);
+            legacy->set_param(VibeParamId::PreHpfHz, 8.0f);
+            legacy->set_param(VibeParamId::SatAsymmetry, 0.0f);
+            legacy->set_param(VibeParamId::SatOutTrim, 1.0f);
+            legacy->mode_chorus = p.mode_chorus;
+        }
     }
 
     ~Impl() {
-        delete vibe;
-        vibe = nullptr;
+        delete improved;
+        delete legacy;
     }
 };
 
@@ -78,9 +134,6 @@ DesktopUnivibeProcessor::DesktopUnivibeProcessor(const UnivibeParams& params) {
     }
     if (params.depth < 0.0f || params.depth > 1.0f) {
         throw std::runtime_error("depth fora do intervalo [0..1]");
-    }
-    if (params.width < 0.0f || params.width > 1.0f) {
-        throw std::runtime_error("width fora do intervalo [0..1]");
     }
     if (params.feedback < 0.0f || params.feedback > 0.99f) {
         throw std::runtime_error("feedback fora do intervalo [0..0.99]");
@@ -109,37 +162,46 @@ void DesktopUnivibeProcessor::process_in_place(std::vector<float>& left, std::ve
         const size_t remain = n - pos;
         const size_t take = std::min(remain, static_cast<size_t>(PERIOD));
 
-        for (size_t i = 0; i < static_cast<size_t>(PERIOD); ++i) {
-            impl_->in_l[i] = 0.0f;
-            impl_->in_r[i] = 0.0f;
-        }
+        std::fill(impl_->in_l.begin(), impl_->in_l.end(), 0.0f);
+        std::fill(impl_->in_r.begin(), impl_->in_r.end(), 0.0f);
 
         for (size_t i = 0; i < take; ++i) {
             impl_->in_l[i] = left[pos + i];
             impl_->in_r[i] = right[pos + i];
         }
 
-        impl_->vibe->out(impl_->in_l.data(), impl_->in_r.data());
-        sanitize_vibe_state(impl_->vibe);
+        if (impl_->user.engine_mode == UnivibeParams::EngineMode::legacy && impl_->legacy) {
+            impl_->legacy->out(impl_->in_l.data(), impl_->in_r.data());
+            sanitize_vibe_state(impl_->legacy);
+            for (size_t i = 0; i < take; ++i) {
+                left[pos + i] = impl_->diff_l[i];
+                right[pos + i] = impl_->diff_r[i];
+            }
+        } else {
+            impl_->improved->out(impl_->in_l.data(), impl_->in_r.data());
+            sanitize_vibe_state(impl_->improved);
 
-        const float dry = impl_->user_chorus ? (1.0f - impl_->mix) : 0.0f;
-        const float wet = impl_->user_chorus ? impl_->mix : 1.0f;
-
-        for (size_t i = 0; i < take; ++i) {
-            float wl = impl_->out_l[i];
-            float wr = impl_->out_r[i];
-            if (!std::isfinite(wl)) wl = 0.0f;
-            if (!std::isfinite(wr)) wr = 0.0f;
-
-            float out_l = impl_->in_l[i] * dry + wl * wet;
-            float out_r = impl_->in_r[i] * dry + wr * wet;
-            if (!std::isfinite(out_l)) out_l = 0.0f;
-            if (!std::isfinite(out_r)) out_r = 0.0f;
-
-            left[pos + i] = out_l;
-            right[pos + i] = out_r;
+            if (impl_->user.compare_mode == UnivibeParams::CompareMode::difference && impl_->legacy) {
+                impl_->legacy->out(impl_->in_l.data(), impl_->in_r.data());
+                sanitize_vibe_state(impl_->legacy);
+                for (size_t i = 0; i < take; ++i) {
+                    left[pos + i] = impl_->out_l[i] - impl_->diff_l[i];
+                    right[pos + i] = impl_->out_r[i] - impl_->diff_r[i];
+                }
+            } else {
+                for (size_t i = 0; i < take; ++i) {
+                    left[pos + i] = impl_->out_l[i];
+                    right[pos + i] = impl_->out_r[i];
+                }
+            }
         }
 
         pos += take;
     }
+
+    impl_->metrics = compute_metrics(left, right);
+}
+
+AudioMetrics DesktopUnivibeProcessor::last_metrics() const {
+    return impl_->metrics;
 }
