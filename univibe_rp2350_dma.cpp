@@ -75,6 +75,10 @@ struct VibeUserParams {
     float lfo_rate_hz = 1.20f;
     float drift_amount = 0.018f;
     float drift_rate_hz = 0.08f;
+    float stereo_width = 0.38f;
+    float stereo_detune = 0.18f;
+    float cross_feedback = 0.03f;
+    float mono_safe = 0.72f;
 };
 
 struct VibeTuningParams {
@@ -110,6 +114,10 @@ enum class VibeParamId : uint8_t {
     LfoRateHz,
     DriftAmount,
     DriftRateHz,
+    StereoWidth,
+    StereoDetune,
+    CrossFeedback,
+    MonoSafe,
 };
 
 struct VibeParamSpec {
@@ -130,6 +138,10 @@ static inline VibeParamSpec vibe_param_spec(VibeParamId id) {
         case VibeParamId::LfoRateHz:  return {0.02f, 12.0f, 1.20f};
         case VibeParamId::DriftAmount:return {0.0f, 0.05f, 0.018f};
         case VibeParamId::DriftRateHz:return {0.005f, 0.5f, 0.08f};
+        case VibeParamId::StereoWidth:return {0.0f, 1.0f, 0.38f};
+        case VibeParamId::StereoDetune:return {0.0f, 1.0f, 0.18f};
+        case VibeParamId::CrossFeedback:return {0.0f, 0.12f, 0.03f};
+        case VibeParamId::MonoSafe:   return {0.0f, 1.0f, 0.72f};
         default:                      return {0.0f, 1.0f, 0.0f};
     }
 }
@@ -146,6 +158,10 @@ static inline float *vibe_param_slot(VibeUserParams &params, VibeParamId id) {
         case VibeParamId::LfoRateHz:   return &params.lfo_rate_hz;
         case VibeParamId::DriftAmount: return &params.drift_amount;
         case VibeParamId::DriftRateHz: return &params.drift_rate_hz;
+        case VibeParamId::StereoWidth: return &params.stereo_width;
+        case VibeParamId::StereoDetune:return &params.stereo_detune;
+        case VibeParamId::CrossFeedback:return &params.cross_feedback;
+        case VibeParamId::MonoSafe:    return &params.mono_safe;
         default:                       return nullptr;
     }
 }
@@ -162,6 +178,10 @@ static inline const float *vibe_param_slot(const VibeUserParams &params, VibePar
         case VibeParamId::LfoRateHz:   return &params.lfo_rate_hz;
         case VibeParamId::DriftAmount: return &params.drift_amount;
         case VibeParamId::DriftRateHz: return &params.drift_rate_hz;
+        case VibeParamId::StereoWidth: return &params.stereo_width;
+        case VibeParamId::StereoDetune:return &params.stereo_detune;
+        case VibeParamId::CrossFeedback:return &params.cross_feedback;
+        case VibeParamId::MonoSafe:    return &params.mono_safe;
         default:                       return nullptr;
     }
 }
@@ -177,6 +197,10 @@ static inline void sanitize_user_params(VibeUserParams *params) {
     params->lfo_rate_hz = clampf(params->lfo_rate_hz, 0.02f, 12.0f);
     params->drift_amount = clampf(params->drift_amount, 0.0f, 0.05f);
     params->drift_rate_hz = clampf(params->drift_rate_hz, 0.005f, 0.5f);
+    params->stereo_width = clampf(params->stereo_width, 0.0f, 1.0f);
+    params->stereo_detune = clampf(params->stereo_detune, 0.0f, 1.0f);
+    params->cross_feedback = clampf(params->cross_feedback, 0.0f, 0.12f);
+    params->mono_safe = clampf(params->mono_safe, 0.0f, 1.0f);
 }
 
 // ============================================================================
@@ -185,17 +209,21 @@ static inline void sanitize_user_params(VibeUserParams *params) {
 
 class EffectLFO {
 private:
-    float phase = 0.0f;
+    float phase_l = 0.0f;
+    float phase_r = 0.25f;
     float state_l = 0.0f;
     float state_r = 0.0f;
     float drift_state = 0.0f;
+    float stereo_drift_state = 0.0f;
     uint32_t drift_rng = 0xA341316Cu;
 
 public:
     void reseed(uint32_t seed) {
         drift_rng = seed ? seed : 0xA341316Cu;
         drift_state = 0.0f;
-        phase = 0.0f;
+        stereo_drift_state = 0.0f;
+        phase_l = 0.0f;
+        phase_r = 0.25f;
         state_l = 0.0f;
         state_r = 0.0f;
     }
@@ -205,21 +233,39 @@ public:
         const float freq = clampf(user.lfo_rate_hz, 0.02f, 12.0f);
         const float drift_amount = clampf(user.drift_amount, 0.0f, 0.05f);
         const float drift_rate_hz = clampf(user.drift_rate_hz, 0.005f, 0.5f);
+        const float stereo_width = clampf(user.stereo_width, 0.0f, 1.0f);
+        const float stereo_detune = clampf(user.stereo_detune, 0.0f, 1.0f);
         const float drift_alpha = 1.0f - expf(-2.0f * kPi * drift_rate_hz * block_time);
 
         // Slow filtered noise gives continuous drift without block-rate stepping.
         drift_state += drift_alpha * (noise_bipolar(drift_rng) - drift_state);
         drift_state = clampf(drift_state, -1.0f, 1.0f);
+        stereo_drift_state += (0.6f * drift_alpha) * (noise_bipolar(drift_rng) - stereo_drift_state);
+        stereo_drift_state = clampf(stereo_drift_state, -1.0f, 1.0f);
 
+        const float base_step = freq * cSAMPLE_RATE * fPERIOD;
         const float drift = 1.0f + drift_amount * drift_state;
-        phase += freq * drift * cSAMPLE_RATE * fPERIOD;
-        if (phase >= 1.0f) phase -= 1.0f;
+        const float detune = 1.0f + 0.025f * stereo_detune * stereo_drift_state;
 
-        float tri_l = (phase < 0.4f) ? (phase * 2.5f) : (1.0f - (phase - 0.4f) * 1.6666f);
+        phase_l += base_step * drift;
+        while (phase_l >= 1.0f) phase_l -= 1.0f;
 
-        float p_r = phase + clampf(tuning.stereo_phase_offset, 0.0f, 0.5f);
-        if (p_r >= 1.0f) p_r -= 1.0f;
-        float tri_r = (p_r < 0.4f) ? (p_r * 2.5f) : (1.0f - (p_r - 0.4f) * 1.6666f);
+        const float base_offset = clampf(tuning.stereo_phase_offset, 0.0f, 0.5f) * (0.35f + 0.65f * stereo_width);
+        phase_r += base_step * drift * detune;
+        while (phase_r >= 1.0f) phase_r -= 1.0f;
+
+        // Keep phase_r around the desired offset while still allowing tiny independent movement.
+        float target_phase_r = phase_l + base_offset;
+        if (target_phase_r >= 1.0f) target_phase_r -= 1.0f;
+        float phase_err = target_phase_r - phase_r;
+        if (phase_err > 0.5f) phase_err -= 1.0f;
+        if (phase_err < -0.5f) phase_err += 1.0f;
+        phase_r += 0.12f * phase_err;
+        if (phase_r >= 1.0f) phase_r -= 1.0f;
+        if (phase_r < 0.0f) phase_r += 1.0f;
+
+        float tri_l = (phase_l < 0.4f) ? (phase_l * 2.5f) : (1.0f - (phase_l - 0.4f) * 1.6666f);
+        float tri_r = (phase_r < 0.4f) ? (phase_r * 2.5f) : (1.0f - (phase_r - 0.4f) * 1.6666f);
 
         const float smoothing = clampf(tuning.lfo_shape_smoothing, 0.01f, 1.0f);
         state_l += smoothing * (tri_l - state_l);
@@ -238,6 +284,7 @@ struct PhaseStage {
     fparams vc, vcvo, ecvc, vevo;
     float oldcvolt = 0.0f;
     float ldr_mismatch = 1.0f;
+    float stereo_spread = 0.0f;
 };
 
 // ============================================================================
@@ -656,6 +703,10 @@ void Vibe::update_smoothed_user_params() {
     smooth_to_target(smoothed_user.lfo_rate_hz, params.user.lfo_rate_hz);
     smooth_to_target(smoothed_user.drift_amount, params.user.drift_amount);
     smooth_to_target(smoothed_user.drift_rate_hz, params.user.drift_rate_hz);
+    smooth_to_target(smoothed_user.stereo_width, params.user.stereo_width);
+    smooth_to_target(smoothed_user.stereo_detune, params.user.stereo_detune);
+    smooth_to_target(smoothed_user.cross_feedback, params.user.cross_feedback);
+    smooth_to_target(smoothed_user.mono_safe, params.user.mono_safe);
     sanitize_user_params(&smoothed_user);
 }
 
@@ -676,10 +727,14 @@ void Vibe::init_vibes() {
     };
 
     uint32_t component_rng = rng_seed ^ 0x51F15EEDu;
+    static const float kStageSpreadPattern[4] = {-0.34f, -0.10f, 0.10f, 0.34f};
     for (int i = 0; i < 8; i++) {
         float cap_var = 1.0f + 0.10f * noise_bipolar(component_rng);
         C1[i] = base_C1[i] * cap_var;
         stage[i].ldr_mismatch = 1.0f + 0.05f * noise_bipolar(component_rng);
+        const int stage_ix = i & 0x3;
+        const float pair_sign = (i < 4) ? 1.0f : -1.0f;
+        stage[i].stereo_spread = pair_sign * (kStageSpreadPattern[stage_ix] + 0.04f * noise_bipolar(component_rng));
         stage[i].oldcvolt = 0.0f;
         en1[i] = k * R1 * C1[i];
         en0[i] = 1.0f;
@@ -691,10 +746,16 @@ void Vibe::init_vibes() {
 }
 
 void Vibe::modulate(float res_l, float res_r) {
+    const float stereo_width = clampf(smoothed_user.stereo_width, 0.0f, 1.0f);
+    const float mono_safe = clampf(smoothed_user.mono_safe, 0.0f, 1.0f);
+    const float classic_scale = mode_chorus ? 0.55f : 1.0f;
+    const float spread_amount = stereo_width * classic_scale * (1.0f - 0.7f * mono_safe);
+
     for (int i = 0; i < 8; i++) {
         float base_res = (i < 4) ? res_l : res_r;
+        float spread = 1.0f + spread_amount * stage[i].stereo_spread;
         // Clamp the stage LDR emulation after mismatch so the network never sees non-physical extremes.
-        float stage_res = clampf(base_res * stage[i].ldr_mismatch,
+        float stage_res = clampf(base_res * stage[i].ldr_mismatch * spread,
                                  params.tuning.ldr_min_ohms,
                                  params.tuning.ldr_max_ohms);
         float currentRv = 4700.0f + stage_res;
@@ -753,7 +814,13 @@ void Vibe::out(float *smpsl, float *smpsr) {
     const float mix = smoothed_user.mix;
     const float input_drive = smoothed_user.input_drive;
     const float output_gain = smoothed_user.output_gain;
+    const float stereo_width = clampf(smoothed_user.stereo_width, 0.0f, 1.0f);
+    const float mono_safe = clampf(smoothed_user.mono_safe, 0.0f, 1.0f);
     const float stage_limit = clampf(params.tuning.stage_state_limit, 2.0f, 12.0f);
+    const float classic_scale = mode_chorus ? 0.55f : 1.0f;
+    const float cross_feedback = clampf(smoothed_user.cross_feedback, 0.0f, 0.12f) *
+                                 classic_scale * (1.0f - 0.75f * mono_safe);
+    const float wet_width = 1.0f - 0.55f * mono_safe + 0.35f * stereo_width * classic_scale;
 
     float target_l = sweep_min + depth * lfol * (sweep_max - sweep_min);
     float target_r = sweep_min + depth * lfor * (sweep_max - sweep_min);
@@ -786,9 +853,15 @@ void Vibe::out(float *smpsl, float *smpsr) {
                                params.tuning.emitter_fb_min,
                                params.tuning.emitter_fb_max);
 
+    const float mix_t = clampf(mix, 0.0f, 1.0f);
+    const float dry_gain = cosf(0.5f * kPi * mix_t);
+    const float wet_gain = sinf(0.5f * kPi * mix_t);
+
     for (int i = 0; i < PERIOD; i++) {
         float dry_l = smpsl[i];
-        float input = bjt_shape(fbl + dry_l, input_drive);
+        const float prev_fbl = fbl;
+        const float prev_fbr = fbr;
+        float input = bjt_shape(prev_fbl + cross_feedback * prev_fbr + dry_l, input_drive);
 
         for (int j = 0; j < 4; j++) {
             float cvolt = vibefilter(input, &stage[j].ecvc) +
@@ -800,11 +873,10 @@ void Vibe::out(float *smpsl, float *smpsr) {
         }
 
         fbl = fast_soft_clip(stage[3].oldcvolt * feedback);
-        efxoutl[i] = output_gain * (mode_chorus ? lpanning * (dry_l * (1.0f - mix) + input * mix)
-                                                : lpanning * input);
+        float wet_l = input;
 
         float dry_r = smpsr[i];
-        input = bjt_shape(fbr + dry_r, input_drive);
+        input = bjt_shape(prev_fbr + cross_feedback * prev_fbl + dry_r, input_drive);
 
         for (int j = 4; j < 8; j++) {
             float cvolt = vibefilter(input, &stage[j].ecvc) +
@@ -816,8 +888,20 @@ void Vibe::out(float *smpsl, float *smpsr) {
         }
 
         fbr = fast_soft_clip(stage[7].oldcvolt * feedback);
-        efxoutr[i] = output_gain * (mode_chorus ? rpanning * (dry_r * (1.0f - mix) + input * mix)
-                                                : rpanning * input);
+        float wet_r = input;
+
+        // Mid/side trim for graceful mono collapse while preserving width in stereo.
+        const float wet_mid = 0.5f * (wet_l + wet_r);
+        wet_l = wet_mid + (wet_l - wet_mid) * wet_width;
+        wet_r = wet_mid + (wet_r - wet_mid) * wet_width;
+
+        if (mode_chorus) {
+            efxoutl[i] = output_gain * lpanning * (dry_l * dry_gain + wet_l * wet_gain);
+            efxoutr[i] = output_gain * rpanning * (dry_r * dry_gain + wet_r * wet_gain);
+        } else {
+            efxoutl[i] = output_gain * lpanning * wet_l;
+            efxoutr[i] = output_gain * rpanning * wet_r;
+        }
     }
 }
 
