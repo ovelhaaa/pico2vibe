@@ -99,6 +99,102 @@ struct VibeParams {
     VibeTuningParams tuning;
 };
 
+enum class VibeVoicing : uint8_t {
+    Classic = 0,
+    Hot,
+    Wide,
+    Hifi,
+};
+
+static inline const char *vibe_voicing_name(VibeVoicing voicing) {
+    switch (voicing) {
+        case VibeVoicing::Classic: return "CLASSIC";
+        case VibeVoicing::Hot:     return "HOT";
+        case VibeVoicing::Wide:    return "WIDE";
+        case VibeVoicing::Hifi:    return "HIFI";
+        default:                   return "CLASSIC";
+    }
+}
+
+static inline const char *vibe_voicing_summary(VibeVoicing voicing) {
+    switch (voicing) {
+        case VibeVoicing::Classic:
+            return "Reference Uni-Vibe voicing: traditional lamp/LDR chew with balanced depth and feedback.";
+        case VibeVoicing::Hot:
+            return "Higher drive and stronger throb: faster lamp response plus more assertive feedback behavior.";
+        case VibeVoicing::Wide:
+            return "Expanded stereo movement: wider channel phase offset and slower smoothing for broader motion.";
+        case VibeVoicing::Hifi:
+            return "Cleaner/smoother path: lower drive, gentler BJT shaping, and extra control smoothing/headroom.";
+        default:
+            return "Reference Uni-Vibe voicing.";
+    }
+}
+
+static inline void sanitize_user_params(VibeUserParams *params);
+
+static inline VibeParams vibe_params_for_voicing(VibeVoicing voicing) {
+    VibeParams params;
+
+    // CLASSIC = baseline reference; this captures the original defaults/behavior.
+    switch (voicing) {
+        case VibeVoicing::Classic:
+            break;
+
+        // HOT = more gain/throb with a touch more regeneration bite.
+        case VibeVoicing::Hot:
+            params.user.input_drive = 4.6f;
+            params.user.feedback = 0.54f;
+            params.user.depth = 0.92f;
+            params.user.mix = 0.56f;
+            params.user.sweep_min = 0.55f;
+            params.user.sweep_max = 1.00f;
+            params.tuning.lamp_attack_sec = 0.007f;
+            params.tuning.lamp_release_sec = 0.030f;
+            params.tuning.emitter_fb_scale = 14200.0f;
+            params.tuning.emitter_fb_max = 2.90f;
+            params.tuning.stage_state_limit = 6.8f;
+            params.tuning.bjt_gain_trim = 0.39f;
+            params.tuning.control_smoothing_hz = 22.0f;
+            break;
+
+        // WIDE = emphasize stereo movement while keeping gain structure familiar.
+        case VibeVoicing::Wide:
+            params.user.depth = 0.90f;
+            params.user.mix = 0.53f;
+            params.user.feedback = 0.44f;
+            params.user.sweep_min = 0.52f;
+            params.user.sweep_max = 1.00f;
+            params.user.drift_amount = 0.022f;
+            params.tuning.stereo_phase_offset = 0.40f;
+            params.tuning.lfo_shape_smoothing = 0.14f;
+            params.tuning.control_smoothing_hz = 16.0f;
+            params.tuning.ldr_curve = 7.3f;
+            break;
+
+        // HIFI = lower color/distortion, smoother controls, and extra headroom.
+        case VibeVoicing::Hifi:
+            params.user.input_drive = 2.3f;
+            params.user.feedback = 0.30f;
+            params.user.depth = 0.80f;
+            params.user.mix = 0.48f;
+            params.user.output_gain = 1.10f;
+            params.user.drift_amount = 0.012f;
+            params.tuning.lamp_attack_sec = 0.014f;
+            params.tuning.lamp_release_sec = 0.060f;
+            params.tuning.bjt_gain_trim = 0.24f;
+            params.tuning.stage_state_limit = 8.5f;
+            params.tuning.emitter_fb_scale = 11000.0f;
+            params.tuning.emitter_fb_max = 2.20f;
+            params.tuning.lfo_shape_smoothing = 0.26f;
+            params.tuning.control_smoothing_hz = 24.0f;
+            break;
+    }
+
+    sanitize_user_params(&params.user);
+    return params;
+}
+
 enum class VibeParamId : uint8_t {
     Depth = 0,
     Feedback,
@@ -255,6 +351,8 @@ public:
     void set_param_normalized(VibeParamId id, float normalized);
     float get_param(VibeParamId id) const;
     float get_param_normalized(VibeParamId id) const;
+    void set_voicing(VibeVoicing next_voicing);
+    VibeVoicing get_voicing() const { return voicing; }
 
     const VibeUserParams &user_params() const { return params.user; }
     const VibeUserParams &smoothed_user_params() const { return smoothed_user; }
@@ -283,6 +381,7 @@ private:
     float on0[8], on1[8], od0[8], od1[8];
     uint32_t rng_seed = 0x13579BDFu;
     VibeUserParams smoothed_user;
+    VibeVoicing voicing = VibeVoicing::Classic;
 
     float vibefilter(float data, fparams *ftype);
     void modulate(float res_l, float res_r);
@@ -564,8 +663,7 @@ private:
 #endif
 
 Vibe::Vibe(float *efxoutl_, float *efxoutr_) : efxoutl(efxoutl_), efxoutr(efxoutr_) {
-    sanitize_user_params(&params.user);
-    smoothed_user = params.user;
+    set_voicing(VibeVoicing::Classic);
     lfo.reseed(rng_seed ^ 0xA511E9B3u);
     update_time_constants();
     init_vibes();
@@ -598,6 +696,13 @@ void Vibe::reseed(uint32_t seed) {
     lfo.reseed(rng_seed ^ 0xA511E9B3u);
     update_time_constants();
     init_vibes();
+}
+
+void Vibe::set_voicing(VibeVoicing next_voicing) {
+    voicing = next_voicing;
+    params = vibe_params_for_voicing(voicing);
+    smoothed_user = params.user;
+    update_time_constants();
 }
 
 void Vibe::set_user_params(const VibeUserParams &user) {
@@ -849,6 +954,8 @@ static Vibe univibe(dsp_out_l, dsp_out_r);
 #if USER_INTERFACE
 static VibeUi vibe_ui;
 #endif
+
+static constexpr VibeVoicing kDefaultVoicing = VibeVoicing::Classic;
 
 alignas(4) static int32_t rx_dma_buf[2][DMA_WORDS_PER_BLOCK];
 alignas(4) static int32_t tx_dma_buf[2][DMA_WORDS_PER_BLOCK];
@@ -1117,7 +1224,10 @@ int main() {
     stdio_init_all();
     sleep_ms(80);
 
+    univibe.set_voicing(kDefaultVoicing);
     univibe.reseed(time_us_32());
+    printf("Voicing: %s\n", vibe_voicing_name(univibe.get_voicing()));
+    printf("Voicing summary: %s\n", vibe_voicing_summary(univibe.get_voicing()));
 
     setup_mclk(PIN_MCLK);
     sleep_ms(20);
