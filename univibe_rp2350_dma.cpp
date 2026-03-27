@@ -80,8 +80,17 @@ struct VibeUserParams {
 struct VibeTuningParams {
     float lamp_attack_sec = 0.010f;
     float lamp_release_sec = 0.040f;
+    float lamp_attack_fast_sec = 0.004f;
+    float lamp_release_slow_sec = 0.085f;
+    float lamp_speed_rise_sensitivity = 0.45f;
+    float lamp_speed_fall_sensitivity = 0.25f;
+    float lamp_thermal_sec = 0.140f;
+    float lamp_hysteresis = 0.085f;
     float ldr_dark_ohms = 1000000.0f;
     float ldr_curve = 7.6009f;
+    float ldr_lut_blend_vintage = 0.25f;
+    float ldr_lut_blend_extended = 0.62f;
+    float ldr_extended_knee = 0.18f;
     float ldr_min_ohms = 3900.0f;
     float ldr_max_ohms = 1000000.0f;
     float emitter_fb_scale = 12500.0f;
@@ -92,6 +101,12 @@ struct VibeTuningParams {
     float lfo_shape_smoothing = 0.20f;
     float stereo_phase_offset = 0.25f;
     float control_smoothing_hz = 18.0f;
+    uint8_t lamp_ldr_model = 0; // 0=VINTAGE_MODEL (default), 1=EXTENDED_MODEL
+};
+
+enum LampLdrModel : uint8_t {
+    VINTAGE_MODEL = 0,
+    EXTENDED_MODEL = 1,
 };
 
 struct VibeParams {
@@ -240,6 +255,34 @@ struct PhaseStage {
     float ldr_mismatch = 1.0f;
 };
 
+struct LampChannelState {
+    float envelope = 0.0f;
+    float thermal = 0.0f;
+    float memory = 0.0f;
+    float last_target = 0.0f;
+};
+
+static constexpr int kLdrLutSize = 17;
+static constexpr float kLdrVintageRatioLut[kLdrLutSize] = {
+    1.000f, 0.978f, 0.946f, 0.900f, 0.845f, 0.780f, 0.705f, 0.625f, 0.545f,
+    0.470f, 0.398f, 0.330f, 0.266f, 0.208f, 0.156f, 0.111f, 0.072f
+};
+static constexpr float kLdrExtendedRatioLut[kLdrLutSize] = {
+    1.000f, 0.986f, 0.962f, 0.928f, 0.878f, 0.812f, 0.734f, 0.650f, 0.564f,
+    0.478f, 0.396f, 0.318f, 0.245f, 0.180f, 0.126f, 0.084f, 0.051f
+};
+
+static inline float lut_interp_0_1(const float *lut, float x) {
+    const float clamped = clampf(x, 0.0f, 1.0f);
+    const float scaled = clamped * (float)(kLdrLutSize - 1);
+    int idx = (int)scaled;
+    if (idx >= kLdrLutSize - 1) {
+        idx = kLdrLutSize - 2;
+    }
+    const float frac = scaled - (float)idx;
+    return lut[idx] + frac * (lut[idx + 1] - lut[idx]);
+}
+
 // ============================================================================
 // Univibe
 // ============================================================================
@@ -270,8 +313,9 @@ private:
 
     EffectLFO lfo;
 
-    float lamp_state_l = 0.0f, lamp_state_r = 0.0f;
-    float lamp_attack, lamp_release;
+    LampChannelState lamp_l, lamp_r;
+    float lamp_attack = 0.0f, lamp_release = 0.0f;
+    float lamp_attack_fast = 0.0f, lamp_release_slow = 0.0f, lamp_thermal = 0.0f;
 
     PhaseStage stage[8];
 
@@ -289,6 +333,8 @@ private:
     void update_time_constants();
     void update_smoothed_user_params();
     float bjt_shape(float data, float drive);
+    float process_lamp_channel(float target, float speed_norm, LampChannelState &channel);
+    float ldr_resistance_from_brightness(float brightness, float slew_abs) const;
 };
 
 #if USER_INTERFACE
@@ -582,15 +628,21 @@ void Vibe::update_time_constants() {
     const float block_time = fPERIOD / fSAMPLE_RATE;
     const float attack_sec = clampf(params.tuning.lamp_attack_sec, 0.001f, 0.250f);
     const float release_sec = clampf(params.tuning.lamp_release_sec, 0.001f, 0.500f);
+    const float attack_fast_sec = clampf(params.tuning.lamp_attack_fast_sec, 0.001f, 0.120f);
+    const float release_slow_sec = clampf(params.tuning.lamp_release_slow_sec, 0.010f, 0.600f);
+    const float thermal_sec = clampf(params.tuning.lamp_thermal_sec, 0.010f, 0.800f);
 
     lamp_attack = 1.0f - expf(-block_time / attack_sec);
     lamp_release = 1.0f - expf(-block_time / release_sec);
+    lamp_attack_fast = 1.0f - expf(-block_time / attack_fast_sec);
+    lamp_release_slow = 1.0f - expf(-block_time / release_slow_sec);
+    lamp_thermal = 1.0f - expf(-block_time / thermal_sec);
 }
 
 void Vibe::reseed(uint32_t seed) {
     rng_seed = seed ? seed : 0x13579BDFu;
-    lamp_state_l = 0.0f;
-    lamp_state_r = 0.0f;
+    lamp_l = {};
+    lamp_r = {};
     fbl = 0.0f;
     fbr = 0.0f;
     sanitize_user_params(&params.user);
@@ -661,6 +713,56 @@ void Vibe::update_smoothed_user_params() {
 
 float Vibe::bjt_shape(float data, float drive) {
     return fast_soft_clip(data * drive) * params.tuning.bjt_gain_trim;
+}
+
+float Vibe::process_lamp_channel(float target, float speed_norm, LampChannelState &channel) {
+    const float t = clampf(target, 0.0f, 1.0f);
+    const float delta = t - channel.envelope;
+    const bool rising = delta > 0.0f;
+    const float amount = fabsf(delta);
+
+    const float rise_speed = 1.0f + speed_norm * clampf(params.tuning.lamp_speed_rise_sensitivity, 0.0f, 1.0f);
+    const float fall_speed = 1.0f + speed_norm * clampf(params.tuning.lamp_speed_fall_sensitivity, 0.0f, 1.0f);
+    const float base_coeff = rising ? lamp_attack * rise_speed : lamp_release * fall_speed;
+    const float edge_coeff = rising ? lamp_attack_fast * rise_speed : lamp_release_slow * fall_speed;
+    const float coeff = clampf(base_coeff + (edge_coeff - base_coeff) * clampf(0.50f + amount * 0.65f, 0.0f, 1.0f), 0.0f, 1.0f);
+    channel.envelope += coeff * delta;
+    channel.envelope = clampf(channel.envelope, 0.0f, 1.0f);
+
+    channel.thermal += lamp_thermal * (channel.envelope - channel.thermal);
+    channel.thermal = clampf(channel.thermal, 0.0f, 1.0f);
+
+    const float slew = channel.envelope - channel.last_target;
+    channel.last_target = channel.envelope;
+    channel.memory += 0.18f * (slew - channel.memory);
+    channel.memory = clampf(channel.memory, -0.5f, 0.5f);
+
+    const float hysteresis = clampf(params.tuning.lamp_hysteresis, 0.0f, 0.20f);
+    float brightness = 0.72f * channel.envelope + 0.28f * channel.thermal;
+    brightness += hysteresis * channel.memory;
+    return clampf(brightness, 0.0f, 1.0f);
+}
+
+float Vibe::ldr_resistance_from_brightness(float brightness, float slew_abs) const {
+    const float b = clampf(brightness, 0.0f, 1.0f);
+    const float exp_ratio = expf(-params.tuning.ldr_curve * b);
+    const LampLdrModel model = (params.tuning.lamp_ldr_model == EXTENDED_MODEL) ? EXTENDED_MODEL : VINTAGE_MODEL;
+
+    float lut_ratio = lut_interp_0_1(kLdrVintageRatioLut, b);
+    float blend = clampf(params.tuning.ldr_lut_blend_vintage, 0.0f, 1.0f);
+
+    if (model == EXTENDED_MODEL) {
+        const float knee = clampf(params.tuning.ldr_extended_knee, 0.0f, 0.45f);
+        const float warped = b + knee * b * (1.0f - b);
+        lut_ratio = lut_interp_0_1(kLdrExtendedRatioLut, warped);
+        blend = clampf(params.tuning.ldr_lut_blend_extended, 0.0f, 1.0f);
+        const float motion = clampf(slew_abs * 10.0f, 0.0f, 1.0f);
+        lut_ratio = clampf(lut_ratio - 0.06f * motion * b, 0.0f, 1.0f);
+    }
+
+    const float ratio = clampf(exp_ratio + blend * (lut_ratio - exp_ratio), 0.0f, 1.0f);
+    const float dark = params.tuning.ldr_dark_ohms;
+    return clampf(dark * ratio, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
 }
 
 void Vibe::init_vibes() {
@@ -758,23 +860,15 @@ void Vibe::out(float *smpsl, float *smpsr) {
     float target_l = sweep_min + depth * lfol * (sweep_max - sweep_min);
     float target_r = sweep_min + depth * lfor * (sweep_max - sweep_min);
 
-    if (target_l > lamp_state_l) lamp_state_l += lamp_attack * (target_l - lamp_state_l);
-    else                         lamp_state_l += lamp_release * (target_l - lamp_state_l);
+    const float speed_norm = clampf((smoothed_user.lfo_rate_hz - 0.02f) * (1.0f / (12.0f - 0.02f)), 0.0f, 1.0f);
+    const float bright_l = process_lamp_channel(target_l, speed_norm, lamp_l);
+    const float bright_r = process_lamp_channel(target_r, speed_norm, lamp_r);
+    const float slew_l = fabsf(lamp_l.memory);
+    const float slew_r = fabsf(lamp_r.memory);
 
-    if (target_r > lamp_state_r) lamp_state_r += lamp_attack * (target_r - lamp_state_r);
-    else                         lamp_state_r += lamp_release * (target_r - lamp_state_r);
-
-    lamp_state_l = clampf(lamp_state_l, 0.0f, 1.0f);
-    lamp_state_r = clampf(lamp_state_r, 0.0f, 1.0f);
-
-    float bright_l = lamp_state_l * sqrtf(lamp_state_l);
-    float bright_r = lamp_state_r * sqrtf(lamp_state_r);
-
-    // LDR clamp keeps the light-dependent network in a plausible range and avoids degenerate coefficient sets.
-    float res_l = params.tuning.ldr_dark_ohms * expf(-params.tuning.ldr_curve * bright_l);
-    float res_r = params.tuning.ldr_dark_ohms * expf(-params.tuning.ldr_curve * bright_r);
-    res_l = clampf(res_l, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
-    res_r = clampf(res_r, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
+    // Keep the classic exponential voicing while adding measured-like nonlinear shoulders via LUT blending.
+    float res_l = ldr_resistance_from_brightness(bright_l, slew_l);
+    float res_r = ldr_resistance_from_brightness(bright_r, slew_r);
 
     modulate(res_l, res_r);
 
