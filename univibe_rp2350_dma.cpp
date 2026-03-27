@@ -41,6 +41,14 @@
 #define PERIOD          32
 #define DMA_WORDS_PER_BLOCK   (PERIOD * CHANNELS)
 
+#define FAST_BLOCK_MOD     0
+#define INTERPOLATED_MOD   1
+#define SAMPLE_ACCURATE_MOD 2
+
+#ifndef UNIVIBE_MOD_MODE
+#define UNIVIBE_MOD_MODE INTERPOLATED_MOD
+#endif
+
 #define DENORMAL_GUARD  1e-18f
 #define cSAMPLE_RATE    (1.0f / SAMPLE_RATE)
 #define fSAMPLE_RATE    SAMPLE_RATE
@@ -201,32 +209,33 @@ public:
     }
 
     void processBlock(float *l, float *r, const VibeUserParams &user, const VibeTuningParams &tuning) {
-        const float block_time = fPERIOD / fSAMPLE_RATE;
+        const float sample_time = 1.0f / fSAMPLE_RATE;
         const float freq = clampf(user.lfo_rate_hz, 0.02f, 12.0f);
         const float drift_amount = clampf(user.drift_amount, 0.0f, 0.05f);
         const float drift_rate_hz = clampf(user.drift_rate_hz, 0.005f, 0.5f);
-        const float drift_alpha = 1.0f - expf(-2.0f * kPi * drift_rate_hz * block_time);
-
-        // Slow filtered noise gives continuous drift without block-rate stepping.
-        drift_state += drift_alpha * (noise_bipolar(drift_rng) - drift_state);
-        drift_state = clampf(drift_state, -1.0f, 1.0f);
-
-        const float drift = 1.0f + drift_amount * drift_state;
-        phase += freq * drift * cSAMPLE_RATE * fPERIOD;
-        if (phase >= 1.0f) phase -= 1.0f;
-
-        float tri_l = (phase < 0.4f) ? (phase * 2.5f) : (1.0f - (phase - 0.4f) * 1.6666f);
-
-        float p_r = phase + clampf(tuning.stereo_phase_offset, 0.0f, 0.5f);
-        if (p_r >= 1.0f) p_r -= 1.0f;
-        float tri_r = (p_r < 0.4f) ? (p_r * 2.5f) : (1.0f - (p_r - 0.4f) * 1.6666f);
-
+        const float drift_alpha = 1.0f - expf(-2.0f * kPi * drift_rate_hz * sample_time);
         const float smoothing = clampf(tuning.lfo_shape_smoothing, 0.01f, 1.0f);
-        state_l += smoothing * (tri_l - state_l);
-        state_r += smoothing * (tri_r - state_r);
 
-        *l = clampf(state_l, 0.0f, 1.0f);
-        *r = clampf(state_r, 0.0f, 1.0f);
+        for (int i = 0; i < PERIOD; ++i) {
+            // Slow filtered noise gives continuous drift and prevents block-edge stepping.
+            drift_state += drift_alpha * (noise_bipolar(drift_rng) - drift_state);
+            drift_state = clampf(drift_state, -1.0f, 1.0f);
+
+            const float drift = 1.0f + drift_amount * drift_state;
+            phase += freq * drift * cSAMPLE_RATE;
+            if (phase >= 1.0f) phase -= 1.0f;
+
+            float tri_l = (phase < 0.4f) ? (phase * 2.5f) : (1.0f - (phase - 0.4f) * 1.6666f);
+            float p_r = phase + clampf(tuning.stereo_phase_offset, 0.0f, 0.5f);
+            if (p_r >= 1.0f) p_r -= 1.0f;
+            float tri_r = (p_r < 0.4f) ? (p_r * 2.5f) : (1.0f - (p_r - 0.4f) * 1.6666f);
+
+            state_l += smoothing * (tri_l - state_l);
+            state_r += smoothing * (tri_r - state_r);
+
+            l[i] = clampf(state_l, 0.0f, 1.0f);
+            r[i] = clampf(state_r, 0.0f, 1.0f);
+        }
     }
 };
 
@@ -238,6 +247,13 @@ struct PhaseStage {
     fparams vc, vcvo, ecvc, vevo;
     float oldcvolt = 0.0f;
     float ldr_mismatch = 1.0f;
+};
+
+struct StageCoeffs {
+    float vc_n0, vc_n1, vc_d1;
+    float ecvc_n0, ecvc_n1, ecvc_d1;
+    float vcvo_n0, vcvo_n1, vcvo_d1;
+    float vevo_n0, vevo_n1, vevo_d1;
 };
 
 // ============================================================================
@@ -272,6 +288,7 @@ private:
 
     float lamp_state_l = 0.0f, lamp_state_r = 0.0f;
     float lamp_attack, lamp_release;
+    float lamp_attack_sample, lamp_release_sample;
 
     PhaseStage stage[8];
 
@@ -285,7 +302,9 @@ private:
     VibeUserParams smoothed_user;
 
     float vibefilter(float data, fparams *ftype);
-    void modulate(float res_l, float res_r);
+    void compute_coeffs(float res_l, float res_r, StageCoeffs out[8]) const;
+    void apply_coeffs(const StageCoeffs in[8]);
+    static void lerp_coeffs(const StageCoeffs &a, const StageCoeffs &b, float t, StageCoeffs &out);
     void update_time_constants();
     void update_smoothed_user_params();
     float bjt_shape(float data, float drive);
@@ -579,12 +598,15 @@ float Vibe::vibefilter(float data, fparams *ftype) {
 }
 
 void Vibe::update_time_constants() {
+    const float sample_time = 1.0f / fSAMPLE_RATE;
     const float block_time = fPERIOD / fSAMPLE_RATE;
     const float attack_sec = clampf(params.tuning.lamp_attack_sec, 0.001f, 0.250f);
     const float release_sec = clampf(params.tuning.lamp_release_sec, 0.001f, 0.500f);
 
     lamp_attack = 1.0f - expf(-block_time / attack_sec);
     lamp_release = 1.0f - expf(-block_time / release_sec);
+    lamp_attack_sample = 1.0f - expf(-sample_time / attack_sec);
+    lamp_release_sample = 1.0f - expf(-sample_time / release_sec);
 }
 
 void Vibe::reseed(uint32_t seed) {
@@ -690,7 +712,7 @@ void Vibe::init_vibes() {
     }
 }
 
-void Vibe::modulate(float res_l, float res_r) {
+void Vibe::compute_coeffs(float res_l, float res_r, StageCoeffs out[8]) const {
     for (int i = 0; i < 8; i++) {
         float base_res = (i < 4) ? res_l : res_r;
         // Clamp the stage LDR emulation after mismatch so the network never sees non-physical extremes.
@@ -717,34 +739,53 @@ void Vibe::modulate(float res_l, float res_r) {
         float ecn0_val = 0.0f;
 
         float tmp = 1.0f / (cd1_val + cd0_val);
-        stage[i].vc.n1 = tmp * (cn0_val - cn1_val);
-        stage[i].vc.n0 = tmp * (cn1_val + cn0_val);
-        stage[i].vc.d1 = tmp * (cd0_val - cd1_val);
+        out[i].vc_n1 = tmp * (cn0_val - cn1_val);
+        out[i].vc_n0 = tmp * (cn1_val + cn0_val);
+        out[i].vc_d1 = tmp * (cd0_val - cd1_val);
 
         tmp = 1.0f / (ecd1_val + ecd0_val);
-        stage[i].ecvc.n1 = tmp * (ecn0_val - ecn1_val);
-        stage[i].ecvc.n0 = tmp * (ecn1_val + ecn0_val);
-        stage[i].ecvc.d1 = tmp * (ecd0_val - ecd1_val);
+        out[i].ecvc_n1 = tmp * (ecn0_val - ecn1_val);
+        out[i].ecvc_n0 = tmp * (ecn1_val + ecn0_val);
+        out[i].ecvc_d1 = tmp * (ecd0_val - ecd1_val);
 
         tmp = 1.0f / (on1_val + od0_val);
-        stage[i].vcvo.n1 = tmp * (on0_val - on1_val);
-        stage[i].vcvo.n0 = tmp * (on1_val + on0_val);
-        stage[i].vcvo.d1 = tmp * (od0_val - on1_val);
+        out[i].vcvo_n1 = tmp * (on0_val - on1_val);
+        out[i].vcvo_n0 = tmp * (on1_val + on0_val);
+        out[i].vcvo_d1 = tmp * (od0_val - on1_val);
 
         float ed1_val = k * R1pRv * C1[i];
         tmp = 1.0f / (ed1_val + ed0_val);
-        stage[i].vevo.n1 = tmp * (en0[i] - en1[i]);
-        stage[i].vevo.n0 = tmp * (en1[i] + en0[i]);
-        stage[i].vevo.d1 = tmp * (ed0_val - ed1_val);
+        out[i].vevo_n1 = tmp * (en0[i] - en1[i]);
+        out[i].vevo_n0 = tmp * (en1[i] + en0[i]);
+        out[i].vevo_d1 = tmp * (ed0_val - ed1_val);
     }
+}
+
+void Vibe::apply_coeffs(const StageCoeffs in[8]) {
+    for (int i = 0; i < 8; ++i) {
+        stage[i].vc.n0 = in[i].vc_n0; stage[i].vc.n1 = in[i].vc_n1; stage[i].vc.d1 = in[i].vc_d1;
+        stage[i].ecvc.n0 = in[i].ecvc_n0; stage[i].ecvc.n1 = in[i].ecvc_n1; stage[i].ecvc.d1 = in[i].ecvc_d1;
+        stage[i].vcvo.n0 = in[i].vcvo_n0; stage[i].vcvo.n1 = in[i].vcvo_n1; stage[i].vcvo.d1 = in[i].vcvo_d1;
+        stage[i].vevo.n0 = in[i].vevo_n0; stage[i].vevo.n1 = in[i].vevo_n1; stage[i].vevo.d1 = in[i].vevo_d1;
+    }
+}
+
+void Vibe::lerp_coeffs(const StageCoeffs &a, const StageCoeffs &b, float t, StageCoeffs &out) {
+    auto lerp = [t](float x, float y) { return x + (y - x) * t; };
+    out.vc_n0 = lerp(a.vc_n0, b.vc_n0); out.vc_n1 = lerp(a.vc_n1, b.vc_n1); out.vc_d1 = lerp(a.vc_d1, b.vc_d1);
+    out.ecvc_n0 = lerp(a.ecvc_n0, b.ecvc_n0); out.ecvc_n1 = lerp(a.ecvc_n1, b.ecvc_n1); out.ecvc_d1 = lerp(a.ecvc_d1, b.ecvc_d1);
+    out.vcvo_n0 = lerp(a.vcvo_n0, b.vcvo_n0); out.vcvo_n1 = lerp(a.vcvo_n1, b.vcvo_n1); out.vcvo_d1 = lerp(a.vcvo_d1, b.vcvo_d1);
+    out.vevo_n0 = lerp(a.vevo_n0, b.vevo_n0); out.vevo_n1 = lerp(a.vevo_n1, b.vevo_n1); out.vevo_d1 = lerp(a.vevo_d1, b.vevo_d1);
 }
 
 void Vibe::out(float *smpsl, float *smpsr) {
     update_time_constants();
     update_smoothed_user_params();
 
-    float lfol, lfor;
-    lfo.processBlock(&lfol, &lfor, smoothed_user, params.tuning);
+    static_assert(UNIVIBE_MOD_MODE >= FAST_BLOCK_MOD && UNIVIBE_MOD_MODE <= SAMPLE_ACCURATE_MOD, "Invalid UNIVIBE_MOD_MODE");
+    float lfo_l[PERIOD];
+    float lfo_r[PERIOD];
+    lfo.processBlock(lfo_l, lfo_r, smoothed_user, params.tuning);
 
     const float depth = smoothed_user.depth;
     const float sweep_min = smoothed_user.sweep_min;
@@ -755,38 +796,90 @@ void Vibe::out(float *smpsl, float *smpsr) {
     const float output_gain = smoothed_user.output_gain;
     const float stage_limit = clampf(params.tuning.stage_state_limit, 2.0f, 12.0f);
 
-    float target_l = sweep_min + depth * lfol * (sweep_max - sweep_min);
-    float target_r = sweep_min + depth * lfor * (sweep_max - sweep_min);
+    auto lamp_to_res = [this](float lamp)->float {
+        const float bright = lamp * sqrtf(fmaxf(lamp, 0.0f));
+        float res = params.tuning.ldr_dark_ohms * expf(-params.tuning.ldr_curve * bright);
+        return clampf(res, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
+    };
+    auto update_lamp = [this](float current, float target)->float {
+        const float alpha = (target > current) ? lamp_attack_sample : lamp_release_sample;
+        return clampf(current + alpha * (target - current), 0.0f, 1.0f);
+    };
+    auto to_emitter_fb = [this](float res)->float {
+        return clampf(params.tuning.emitter_fb_scale / res, params.tuning.emitter_fb_min, params.tuning.emitter_fb_max);
+    };
 
-    if (target_l > lamp_state_l) lamp_state_l += lamp_attack * (target_l - lamp_state_l);
-    else                         lamp_state_l += lamp_release * (target_l - lamp_state_l);
+    float emitterfb_l = 0.0f;
+    float emitterfb_r = 0.0f;
+    StageCoeffs coeff_start[8] = {};
+    StageCoeffs coeff_end[8] = {};
+    StageCoeffs coeff_work[8] = {};
+    float emitterfb_start_l = 0.0f, emitterfb_start_r = 0.0f;
+    float emitterfb_end_l = 0.0f, emitterfb_end_r = 0.0f;
 
-    if (target_r > lamp_state_r) lamp_state_r += lamp_attack * (target_r - lamp_state_r);
-    else                         lamp_state_r += lamp_release * (target_r - lamp_state_r);
-
-    lamp_state_l = clampf(lamp_state_l, 0.0f, 1.0f);
-    lamp_state_r = clampf(lamp_state_r, 0.0f, 1.0f);
-
-    float bright_l = lamp_state_l * sqrtf(lamp_state_l);
-    float bright_r = lamp_state_r * sqrtf(lamp_state_r);
-
-    // LDR clamp keeps the light-dependent network in a plausible range and avoids degenerate coefficient sets.
-    float res_l = params.tuning.ldr_dark_ohms * expf(-params.tuning.ldr_curve * bright_l);
-    float res_r = params.tuning.ldr_dark_ohms * expf(-params.tuning.ldr_curve * bright_r);
-    res_l = clampf(res_l, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
-    res_r = clampf(res_r, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
-
-    modulate(res_l, res_r);
-
-    // Clamp emitter feedback to keep the stage feedback lively but out of self-oscillating extremes.
-    float emitterfb_l = clampf(params.tuning.emitter_fb_scale / res_l,
-                               params.tuning.emitter_fb_min,
-                               params.tuning.emitter_fb_max);
-    float emitterfb_r = clampf(params.tuning.emitter_fb_scale / res_r,
-                               params.tuning.emitter_fb_min,
-                               params.tuning.emitter_fb_max);
+    // CPU x qualidade no RP2350:
+    // - FAST_BLOCK_MOD: custo mínimo (coeficientes 1x/bloco), mantém fallback e menor uso de CPU.
+    // - INTERPOLATED_MOD: calcula início/fim e interpola por sample, reduz stepping com custo moderado.
+    // - SAMPLE_ACCURATE_MOD: atualiza lâmpada/resistência/coeficientes por sample, melhor qualidade e maior custo.
+#if UNIVIBE_MOD_MODE == FAST_BLOCK_MOD
+    {
+        const float target_l = sweep_min + depth * lfo_l[PERIOD - 1] * (sweep_max - sweep_min);
+        const float target_r = sweep_min + depth * lfo_r[PERIOD - 1] * (sweep_max - sweep_min);
+        lamp_state_l = clampf(lamp_state_l + ((target_l > lamp_state_l) ? lamp_attack : lamp_release) * (target_l - lamp_state_l), 0.0f, 1.0f);
+        lamp_state_r = clampf(lamp_state_r + ((target_r > lamp_state_r) ? lamp_attack : lamp_release) * (target_r - lamp_state_r), 0.0f, 1.0f);
+        const float res_l = lamp_to_res(lamp_state_l);
+        const float res_r = lamp_to_res(lamp_state_r);
+        compute_coeffs(res_l, res_r, coeff_start);
+        apply_coeffs(coeff_start);
+        emitterfb_l = to_emitter_fb(res_l);
+        emitterfb_r = to_emitter_fb(res_r);
+    }
+#elif UNIVIBE_MOD_MODE == INTERPOLATED_MOD
+    {
+        const float res_start_l = lamp_to_res(lamp_state_l);
+        const float res_start_r = lamp_to_res(lamp_state_r);
+        compute_coeffs(res_start_l, res_start_r, coeff_start);
+        float lamp_end_l = lamp_state_l;
+        float lamp_end_r = lamp_state_r;
+        for (int i = 0; i < PERIOD; ++i) {
+            const float target_l = sweep_min + depth * lfo_l[i] * (sweep_max - sweep_min);
+            const float target_r = sweep_min + depth * lfo_r[i] * (sweep_max - sweep_min);
+            lamp_end_l = update_lamp(lamp_end_l, target_l);
+            lamp_end_r = update_lamp(lamp_end_r, target_r);
+        }
+        const float res_end_l = lamp_to_res(lamp_end_l);
+        const float res_end_r = lamp_to_res(lamp_end_r);
+        compute_coeffs(res_end_l, res_end_r, coeff_end);
+        lamp_state_l = lamp_end_l;
+        lamp_state_r = lamp_end_r;
+        emitterfb_start_l = to_emitter_fb(res_start_l);
+        emitterfb_start_r = to_emitter_fb(res_start_r);
+        emitterfb_end_l = to_emitter_fb(res_end_l);
+        emitterfb_end_r = to_emitter_fb(res_end_r);
+    }
+#endif
 
     for (int i = 0; i < PERIOD; i++) {
+#if UNIVIBE_MOD_MODE == INTERPOLATED_MOD
+        const float t = (PERIOD > 1) ? ((float)i / (float)(PERIOD - 1)) : 0.0f;
+        emitterfb_l = emitterfb_start_l + (emitterfb_end_l - emitterfb_start_l) * t;
+        emitterfb_r = emitterfb_start_r + (emitterfb_end_r - emitterfb_start_r) * t;
+        for (int s = 0; s < 8; ++s) {
+            lerp_coeffs(coeff_start[s], coeff_end[s], t, coeff_work[s]);
+        }
+        apply_coeffs(coeff_work);
+#elif UNIVIBE_MOD_MODE == SAMPLE_ACCURATE_MOD
+        const float target_l = sweep_min + depth * lfo_l[i] * (sweep_max - sweep_min);
+        const float target_r = sweep_min + depth * lfo_r[i] * (sweep_max - sweep_min);
+        lamp_state_l = update_lamp(lamp_state_l, target_l);
+        lamp_state_r = update_lamp(lamp_state_r, target_r);
+        const float res_l = lamp_to_res(lamp_state_l);
+        const float res_r = lamp_to_res(lamp_state_r);
+        compute_coeffs(res_l, res_r, coeff_work);
+        apply_coeffs(coeff_work);
+        emitterfb_l = to_emitter_fb(res_l);
+        emitterfb_r = to_emitter_fb(res_r);
+#endif
         float dry_l = smpsl[i];
         float input = bjt_shape(fbl + dry_l, input_drive);
 
