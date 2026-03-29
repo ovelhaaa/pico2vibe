@@ -88,6 +88,20 @@ static inline float soft_clip_cubic(float x) {
     return x * (27.0f + xx) / (27.0f + 9.0f * xx);
 }
 
+static inline float lerpf(float a, float b, float t) {
+    return a + (b - a) * t;
+}
+
+// Keeps low/mid feedback behavior familiar while giving the top of the knob
+// more useful sustain range for audible repeats.
+static inline float feedback_musical_gain(float knob) {
+    const float k = clampf(knob, 0.0f, 0.65f);
+    const float normalized = k * (1.0f / 0.65f);
+    const float shaped = normalized * normalized * (3.0f - 2.0f * normalized);
+    const float boosted = k + 0.10f * shaped * k;
+    return clampf(boosted, 0.0f, 0.70f);
+}
+
 constexpr float kPi = 3.14159265358979323846f;
 
 struct ParamRamp {
@@ -1091,7 +1105,8 @@ void Vibe::out(float *smpsl, float *smpsr) {
 
         const float emitterfb_l = clampf(params.tuning.emitter_fb_scale / res_l, params.tuning.emitter_fb_min, params.tuning.emitter_fb_max);
         const float emitterfb_r = clampf(params.tuning.emitter_fb_scale / res_r, params.tuning.emitter_fb_min, params.tuning.emitter_fb_max);
-        const float feedback = fb_ramp.tick();
+        const float feedback_knob = fb_ramp.tick();
+        const float feedback = feedback_musical_gain(feedback_knob);
         const float input_drive = drive_ramp.tick();
         const float mix = mix_ramp.tick();
         const float output_gain = gain_ramp.tick();
@@ -1099,15 +1114,23 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float tone_tilt = tone_tilt_ramp.tick();
         const float wet_gain = fast_sqrt01(mix);
         const float dry_gain = fast_sqrt01(1.0f - mix);
-        const float stress = 0.50f * clampf((input_drive - 0.5f) / 5.5f, 0.0f, 1.0f) + 0.30f * clampf(feedback / 0.65f, 0.0f, 1.0f) + 0.20f * mix * mix;
+        const float stress = 0.55f * clampf((input_drive - 0.5f) / 5.5f, 0.0f, 1.0f)
+                           + 0.18f * clampf(feedback / 0.70f, 0.0f, 1.0f)
+                           + 0.27f * mix * mix;
         const float target_trim = (1.0f / (1.0f + 0.35f * stress)) * (1.0f - params.tuning.gain_comp_depth * (mix - 0.5f));
         output_trim_smoothed += 0.06f * (target_trim - output_trim_smoothed);
         const float final_gain = output_gain * output_trim_smoothed;
+        const float hi_fb = clampf((feedback_knob - 0.42f) * (1.0f / 0.23f), 0.0f, 1.0f);
+        const float clarity_boost = hi_fb * (0.70f + 0.30f * (1.0f - mix));
+        const float fb_sat_drive = (1.0f + params.tuning.feedback_sat) * (1.0f - 0.30f * clarity_boost);
+        const float fb_color_blend = 0.28f * clarity_boost;
+        const float wet_core_blend = 0.24f * clarity_boost;
 
         float dry_l = smpsl[i];
         dry_l = hp_pre(dry_l, pre_hpf_hz, pre_hpf_x1_l, pre_hpf_y1_l);
         const float fb_col_l = feedback_color_process(fbl, params.feedback_color, fb_lp_l, fb_hp_l);
-        float input = bjt_shape(fb_col_l + dry_l, input_drive);
+        const float fb_in_l = lerpf(fb_col_l, fbl, fb_color_blend);
+        float input = bjt_shape(fb_in_l + dry_l, input_drive);
 
         for (int j = 0; j < 4; j++) {
             float cvolt = vibefilter(input, &stage[j].ecvc) +
@@ -1119,16 +1142,19 @@ void Vibe::out(float *smpsl, float *smpsr) {
         }
 
         float fb_raw_l = stage[3].oldcvolt * feedback;
-        fb_raw_l = tanhf(fb_raw_l * (1.0f + params.tuning.feedback_sat));
+        fb_raw_l = tanhf(fb_raw_l * fb_sat_drive);
         fbl = clampf(fb_raw_l, -0.95f, 0.95f);
-        float wet_l = tone_tilt_process(input, tone_tilt, tone_lp_l);
+        const float wet_core_l = input;
+        const float wet_air_l = tone_tilt_process(input, tone_tilt, tone_lp_l);
+        float wet_l = wet_air_l + wet_core_blend * wet_core_l;
         const float mixed_l = mode_chorus ? (dry_l * dry_gain + wet_l * wet_gain) : wet_l;
         efxoutl[i] = final_gain * lpanning * mixed_l;
 
         float dry_r = smpsr[i];
         dry_r = hp_pre(dry_r, pre_hpf_hz, pre_hpf_x1_r, pre_hpf_y1_r);
         const float fb_col_r = feedback_color_process(fbr, params.feedback_color, fb_lp_r, fb_hp_r);
-        input = bjt_shape(fb_col_r + dry_r, input_drive);
+        const float fb_in_r = lerpf(fb_col_r, fbr, fb_color_blend);
+        input = bjt_shape(fb_in_r + dry_r, input_drive);
 
         for (int j = 4; j < 8; j++) {
             float cvolt = vibefilter(input, &stage[j].ecvc) +
@@ -1140,9 +1166,11 @@ void Vibe::out(float *smpsl, float *smpsr) {
         }
 
         float fb_raw_r = stage[7].oldcvolt * feedback;
-        fb_raw_r = tanhf(fb_raw_r * (1.0f + params.tuning.feedback_sat));
+        fb_raw_r = tanhf(fb_raw_r * fb_sat_drive);
         fbr = clampf(fb_raw_r, -0.95f, 0.95f);
-        float wet_r = tone_tilt_process(input, tone_tilt, tone_lp_r);
+        const float wet_core_r = input;
+        const float wet_air_r = tone_tilt_process(input, tone_tilt, tone_lp_r);
+        float wet_r = wet_air_r + wet_core_blend * wet_core_r;
         const float mixed_r = mode_chorus ? (dry_r * dry_gain + wet_r * wet_gain) : wet_r;
         efxoutr[i] = final_gain * rpanning * mixed_r;
     }
