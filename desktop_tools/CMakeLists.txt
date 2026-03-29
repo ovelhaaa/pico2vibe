@@ -43,3 +43,24 @@ if(MSVC)
 else()
     target_compile_options(univibe_cli PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+
+add_executable(dsp_validate
+    src/analysis_main.cpp
+    src/processor.cpp
+    src/wav_io.cpp
+    "${GENERATED_DSP_HEADER}"
+)
+
+add_dependencies(dsp_validate generate_vibe_dsp)
+
+target_include_directories(dsp_validate PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/src"
+    "${GENERATED_DIR}"
+)
+
+if(MSVC)
+    target_compile_options(dsp_validate PRIVATE /W4)
+else()
+    target_compile_options(dsp_validate PRIVATE -Wall -Wextra -Wpedantic)
+endif()

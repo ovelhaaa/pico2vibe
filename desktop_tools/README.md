@@ -6,6 +6,7 @@ Esta pasta adiciona um fluxo de teste offline no PC sem mexer no firmware do Pic
 
 - Reusar automaticamente o mesmo núcleo DSP do arquivo `../univibe_rp2350_dma.cpp`.
 - Permitir testar em arquivo completo (WAV/MP3) antes de gravar na placa.
+- Validar mudanças DSP com medições objetivas (WAV + CSV), incluindo A/B simples.
 
 ## Como a paridade com o Pico funciona
 
@@ -22,11 +23,12 @@ cmake -S desktop_tools -B build/desktop_tools -G Ninja
 cmake --build build/desktop_tools -j
 ```
 
-Executavel gerado:
+Executaveis gerados:
 
 - `build/desktop_tools/univibe_cli.exe`
+- `build/desktop_tools/dsp_validate.exe`
 
-## Usar CLI
+## Usar CLI de processamento (arquivo único)
 
 ```powershell
 build/desktop_tools/univibe_cli.exe ^
@@ -44,6 +46,51 @@ build/desktop_tools/univibe_cli.exe ^
 Entrada aceita WAV; para MP3 usa `ffmpeg` se estiver no PATH.
 Saida recomendada: `--wav-format pcm16` (mais compatível).
 
+## Harness de validação offline (`dsp_validate`)
+
+Ferramenta para regressão de DSP. Ela:
+
+1. Gera sinais de teste:
+   - impulso
+   - seno em múltiplos níveis
+   - sweep logarítmico
+   - tom sintético tipo guitarra
+2. Processa offline por preset/voicing (`classic`, `subtle`, `deep`, `vibrato`).
+3. Exporta WAV de entrada/saída e CSV com métricas.
+4. Mede/loga:
+   - resposta em frequência aproximada (`frequency_response.csv`)
+   - rastreamento aproximado de notch no tempo (`notch_tracking.csv`)
+   - THD por nível de drive (nível de entrada) (`thd_vs_drive.csv`)
+   - energia de alta frequência (proxy de aliasing) (`summary.csv`, `thd_vs_drive.csv`)
+5. Facilita A/B com baseline via `--compare-to`.
+
+### Exemplo rápido
+
+```powershell
+build/desktop_tools/dsp_validate.exe ^
+  --out-dir analysis/new ^
+  --preset classic ^
+  --preset deep
+```
+
+### Exemplo A/B (old vs new)
+
+```powershell
+build/desktop_tools/dsp_validate.exe ^
+  --out-dir analysis/new ^
+  --preset classic ^
+  --compare-to analysis/old
+```
+
+Isso gera, por preset:
+
+- `signals/*_in.wav` e `signals/*_out.wav`
+- `metrics/frequency_response.csv`
+- `metrics/notch_tracking.csv`
+- `metrics/thd_vs_drive.csv`
+- `metrics/summary.csv`
+- `metrics/summary_vs_baseline.csv` (quando `--compare-to` é usado)
+
 ## GUI Python
 
 ```powershell
@@ -54,5 +101,5 @@ A GUI chama a CLI e permite ouvir a saída. Se `ffplay` estiver no PATH, ele é 
 
 ## Observações
 
-- Para equivalência com o firmware atual, a CLI exige 44.1 kHz.
+- Para equivalência com o firmware atual, a validação roda em 44.1 kHz.
 - Modo `chorus` e `vibrato` estão suportados.
