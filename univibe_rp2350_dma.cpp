@@ -523,6 +523,11 @@ public:
     bool mode_chorus = true;
 
 private:
+    // DSP invariants / technical checklist:
+    // 1) New filters/states must be plain float members (or fixed-size arrays), never heap allocated.
+    // 2) Parameter smoothing/updates happen per block (outside the tight ISR sample loop).
+    // 3) Inner-loop trig/exp usage must stay minimal; prefer precomputed coefficients when possible.
+    // 4) Runtime NaN/Inf guards are desktop-only (see desktop_tools/src/processor.cpp).
     float *efxoutl;
     float *efxoutr;
     float lpanning = 1.0f, rpanning = 1.0f;
@@ -1102,7 +1107,15 @@ void Vibe::out(float *smpsl, float *smpsr) {
     update_time_constants();
     const VibeUserParams prev = smoothed_user;
     update_smoothed_user_params();
+    // Invariant: stage integrator state is always bounded by tuning to avoid runaway poles.
     const float stage_limit = clampf(params.tuning.stage_state_limit, 2.0f, 12.0f);
+    // Invariant: per-sample coefficients below are block constants; avoid recomputing transcendental math.
+    const float fb_env_attack = 1.0f - expf(-2.0f * kPi * 320.0f * cSAMPLE_RATE);
+    const float fb_env_release = 1.0f - expf(-2.0f * kPi * 48.0f * cSAMPLE_RATE);
+    const float wet_env_attack = 1.0f - expf(-2.0f * kPi * 45.0f * cSAMPLE_RATE);
+    const float wet_env_release = 1.0f - expf(-2.0f * kPi * 6.0f * cSAMPLE_RATE);
+    const float input_env_attack = 1.0f - expf(-2.0f * kPi * 180.0f * cSAMPLE_RATE);
+    const float input_env_release = 1.0f - expf(-2.0f * kPi * 16.0f * cSAMPLE_RATE);
 
     depth_ramp.begin(prev.depth, smoothed_user.depth, PERIOD);
     fb_ramp.begin(prev.feedback, smoothed_user.feedback, PERIOD);
@@ -1139,6 +1152,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float mem_a_dn_r = mem_base * 0.58f;
         lamp_memory_l += ((target_l > lamp_memory_l) ? mem_a_up_l : mem_a_dn_l) * (target_l - lamp_memory_l);
         lamp_memory_r += ((target_r > lamp_memory_r) ? mem_a_up_r : mem_a_dn_r) * (target_r - lamp_memory_r);
+        // Invariant: lamp memory emulation stays physical [0..1] before non-linear shaping.
         lamp_memory_l = clampf(lamp_memory_l, 0.0f, 1.0f);
         lamp_memory_r = clampf(lamp_memory_r, 0.0f, 1.0f);
 
@@ -1153,6 +1167,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float rel_r = clampf(lamp_release / stage_slew_r, 0.0001f, 1.0f);
         lamp_state_l += ((target_l_h > lamp_state_l) ? atk_l : rel_l) * (target_l_h - lamp_state_l);
         lamp_state_r += ((target_r_h > lamp_state_r) ? atk_r : rel_r) * (target_r_h - lamp_state_r);
+        // Invariant: optical lamp state clamp avoids invalid LDR exponent input.
         lamp_state_l = clampf(lamp_state_l, 0.0f, 1.0f);
         lamp_state_r = clampf(lamp_state_r, 0.0f, 1.0f);
 
@@ -1187,15 +1202,9 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float wet_core_blend = 0.24f * clarity_boost;
         const float fb_lim_threshold = 0.78f;
         const float fb_lim_floor = 0.30f;
-        const float fb_env_attack = 1.0f - expf(-2.0f * kPi * 320.0f * cSAMPLE_RATE);
-        const float fb_env_release = 1.0f - expf(-2.0f * kPi * 48.0f * cSAMPLE_RATE);
-        const float wet_env_attack = 1.0f - expf(-2.0f * kPi * 45.0f * cSAMPLE_RATE);
-        const float wet_env_release = 1.0f - expf(-2.0f * kPi * 6.0f * cSAMPLE_RATE);
         const float wet_env_floor = 1.0e-4f;
         const float wet_comp_min = 0.84140f; // -1.5 dB
         const float wet_comp_max = 1.18850f; // +1.5 dB
-        const float input_env_attack = 1.0f - expf(-2.0f * kPi * 180.0f * cSAMPLE_RATE);
-        const float input_env_release = 1.0f - expf(-2.0f * kPi * 16.0f * cSAMPLE_RATE);
         // Adaptive drive coefficients: trade-off musical feel vs CPU/complexity.
         const float dyn_base = clampf(0.80f + 0.34f * input_drive, 0.80f, 2.20f);
         const float dyn_k1 = 1.05f; // input envelope weight
@@ -1232,6 +1241,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float fb_gain_l = (fb_env_l > fb_lim_threshold)
                                 ? clampf(fb_lim_threshold / (fb_env_l + 1e-9f), fb_lim_floor, 1.0f)
                                 : 1.0f;
+        // Invariant: feedback state is bounded to keep stereo lanes numerically stable.
         fbl = clampf(fb_sat_l * fb_gain_l, -0.95f, 0.95f);
         const float wet_core_l = input;
         const float wet_air_l = tone_tilt_process(input, tone_tilt, tone_lp_l);
@@ -1262,6 +1272,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float fb_gain_r = (fb_env_r > fb_lim_threshold)
                                 ? clampf(fb_lim_threshold / (fb_env_r + 1e-9f), fb_lim_floor, 1.0f)
                                 : 1.0f;
+        // Invariant: mirrored bound for right feedback state.
         fbr = clampf(fb_sat_r * fb_gain_r, -0.95f, 0.95f);
         const float wet_core_r = input;
         const float wet_air_r = tone_tilt_process(input, tone_tilt, tone_lp_r);
