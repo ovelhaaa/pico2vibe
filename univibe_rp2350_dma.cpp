@@ -508,6 +508,7 @@ private:
     FeedbackMidState fb_mid_l{};
     FeedbackMidState fb_mid_r{};
     float fb_env_l = 0.0f, fb_env_r = 0.0f;
+    float wet_env_l = 0.0f, wet_env_r = 0.0f;
     float tone_lp_l = 0.0f, tone_lp_r = 0.0f;
     float lamp_memory_l = 0.0f, lamp_memory_r = 0.0f;
     float stage_lamp_slew[8] = {0};
@@ -1129,6 +1130,13 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float fb_lim_floor = 0.30f;
         const float fb_env_attack = 1.0f - expf(-2.0f * kPi * 320.0f * cSAMPLE_RATE);
         const float fb_env_release = 1.0f - expf(-2.0f * kPi * 48.0f * cSAMPLE_RATE);
+        const float wet_env_attack = 1.0f - expf(-2.0f * kPi * 45.0f * cSAMPLE_RATE);
+        const float wet_env_release = 1.0f - expf(-2.0f * kPi * 6.0f * cSAMPLE_RATE);
+        const float wet_env_floor = 1.0e-4f;
+        const float wet_comp_min = 0.84140f; // -1.5 dB
+        const float wet_comp_max = 1.18850f; // +1.5 dB
+        const bool classic_chorus_profile = mode_chorus && (params.voicing == VibeVoicing::ClassicChorus);
+        const float classic_stereo_reduction = classic_chorus_profile ? 0.88f : 1.0f;
 
         float dry_l = smpsl[i];
         dry_l = hp_pre(dry_l, pre_hpf_hz, pre_hpf_x1_l, pre_hpf_y1_l);
@@ -1156,8 +1164,6 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float wet_core_l = input;
         const float wet_air_l = tone_tilt_process(input, tone_tilt, tone_lp_l);
         float wet_l = wet_air_l + wet_core_blend * wet_core_l;
-        const float mixed_l = mode_chorus ? (dry_l * dry_gain + wet_l * wet_gain) : wet_l;
-        efxoutl[i] = final_gain * lpanning * mixed_l;
 
         float dry_r = smpsr[i];
         dry_r = hp_pre(dry_r, pre_hpf_hz, pre_hpf_x1_r, pre_hpf_y1_r);
@@ -1185,7 +1191,39 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float wet_core_r = input;
         const float wet_air_r = tone_tilt_process(input, tone_tilt, tone_lp_r);
         float wet_r = wet_air_r + wet_core_blend * wet_core_r;
+
+        // Light stereo narrowing for classic chorus voicing to keep the image closer to vintage behavior.
+        const float wet_mid = 0.5f * (wet_l + wet_r);
+        const float wet_side = 0.5f * (wet_l - wet_r) * classic_stereo_reduction;
+        wet_l = wet_mid + wet_side;
+        wet_r = wet_mid - wet_side;
+
+        // Cheap one-pole wet energy estimator + bounded wet compensation driven by depth.
+        const float wet_energy_l = wet_l * wet_l;
+        const float wet_energy_r = wet_r * wet_r;
+        wet_env_l += ((wet_energy_l > wet_env_l) ? wet_env_attack : wet_env_release) * (wet_energy_l - wet_env_l);
+        wet_env_r += ((wet_energy_r > wet_env_r) ? wet_env_attack : wet_env_release) * (wet_energy_r - wet_env_r);
+        wet_env_l = clampf(wet_env_l, 0.0f, 64.0f);
+        wet_env_r = clampf(wet_env_r, 0.0f, 64.0f);
+
+        const float wet_ref = 0.12f + 0.22f * clampf(depth, 0.0f, 1.0f);
+        const float inv_env_l = wet_ref / fmaxf(wet_env_l, wet_env_floor);
+        const float inv_env_r = wet_ref / fmaxf(wet_env_r, wet_env_floor);
+        const float depth_comp_amt = clampf(depth * (0.55f + 0.45f * mix), 0.0f, 1.0f);
+        const float wet_comp_l_raw = clampf(powf(inv_env_l, 0.20f), wet_comp_min, wet_comp_max);
+        const float wet_comp_r_raw = clampf(powf(inv_env_r, 0.20f), wet_comp_min, wet_comp_max);
+        const float wet_comp_l = 1.0f + (wet_comp_l_raw - 1.0f) * depth_comp_amt;
+        const float wet_comp_r = 1.0f + (wet_comp_r_raw - 1.0f) * depth_comp_amt;
+
+        // Vibrato remains 100% wet, but trim depth-dependently to avoid overstatement at low rates/high depth.
+        const float vibrato_trim = clampf(1.0f - 0.12f * depth * depth, 0.85f, 1.0f);
+        const float wet_mode_trim = mode_chorus ? 1.0f : vibrato_trim;
+        wet_l *= wet_comp_l * wet_mode_trim;
+        wet_r *= wet_comp_r * wet_mode_trim;
+
+        const float mixed_l = mode_chorus ? (dry_l * dry_gain + wet_l * wet_gain) : wet_l;
         const float mixed_r = mode_chorus ? (dry_r * dry_gain + wet_r * wet_gain) : wet_r;
+        efxoutl[i] = final_gain * lpanning * mixed_l;
         efxoutr[i] = final_gain * rpanning * mixed_r;
     }
 }
