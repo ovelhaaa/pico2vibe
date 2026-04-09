@@ -509,6 +509,7 @@ private:
     FeedbackMidState fb_mid_r{};
     float fb_env_l = 0.0f, fb_env_r = 0.0f;
     float tone_lp_l = 0.0f, tone_lp_r = 0.0f;
+    float wet_energy_env = 0.0f;
     float lamp_memory_l = 0.0f, lamp_memory_r = 0.0f;
     float stage_lamp_slew[8] = {0};
     ParamRamp depth_ramp, fb_ramp, mix_ramp, drive_ramp, gain_ramp, sweep_min_ramp, sweep_max_ramp;
@@ -830,6 +831,7 @@ void Vibe::reseed(uint32_t seed) {
     fb_mid_r = {};
     fb_env_l = 0.0f;
     fb_env_r = 0.0f;
+    wet_energy_env = 0.0f;
     sanitize_user_params(&params.user);
     smoothed_user = params.user;
     lfo.reseed(rng_seed ^ 0xA511E9B3u);
@@ -1113,8 +1115,8 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float output_gain = gain_ramp.tick();
         const float pre_hpf_hz = pre_hpf_ramp.tick();
         const float tone_tilt = tone_tilt_ramp.tick();
-        const float wet_gain = fast_sqrt01(mix);
         const float dry_gain = fast_sqrt01(1.0f - mix);
+        const float wet_gain_base = fast_sqrt01(mix);
         const float stress = 0.55f * clampf((input_drive - 0.5f) / 5.5f, 0.0f, 1.0f)
                            + 0.18f * clampf(feedback / 0.70f, 0.0f, 1.0f)
                            + 0.27f * mix * mix;
@@ -1129,6 +1131,13 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float fb_lim_floor = 0.30f;
         const float fb_env_attack = 1.0f - expf(-2.0f * kPi * 320.0f * cSAMPLE_RATE);
         const float fb_env_release = 1.0f - expf(-2.0f * kPi * 48.0f * cSAMPLE_RATE);
+        const float wet_env_attack = 1.0f - expf(-2.0f * kPi * 42.0f * cSAMPLE_RATE);
+        const float wet_env_release = 1.0f - expf(-2.0f * kPi * 4.5f * cSAMPLE_RATE);
+        constexpr float kWetCompMin = 0.84139514f;  // -1.5 dB
+        constexpr float kWetCompMax = 1.18850220f;  // +1.5 dB
+        constexpr float kWetDenomFloor = 1e-4f;
+        const bool classic_chorus_profile = mode_chorus && (params.voicing == VibeVoicing::ClassicChorus);
+        const float stereo_crossfeed = classic_chorus_profile ? clampf(0.06f + 0.16f * depth, 0.0f, 0.25f) : 0.0f;
 
         float dry_l = smpsl[i];
         dry_l = hp_pre(dry_l, pre_hpf_hz, pre_hpf_x1_l, pre_hpf_y1_l);
@@ -1156,8 +1165,6 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float wet_core_l = input;
         const float wet_air_l = tone_tilt_process(input, tone_tilt, tone_lp_l);
         float wet_l = wet_air_l + wet_core_blend * wet_core_l;
-        const float mixed_l = mode_chorus ? (dry_l * dry_gain + wet_l * wet_gain) : wet_l;
-        efxoutl[i] = final_gain * lpanning * mixed_l;
 
         float dry_r = smpsr[i];
         dry_r = hp_pre(dry_r, pre_hpf_hz, pre_hpf_x1_r, pre_hpf_y1_r);
@@ -1185,7 +1192,29 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float wet_core_r = input;
         const float wet_air_r = tone_tilt_process(input, tone_tilt, tone_lp_r);
         float wet_r = wet_air_r + wet_core_blend * wet_core_r;
-        const float mixed_r = mode_chorus ? (dry_r * dry_gain + wet_r * wet_gain) : wet_r;
+
+        const float wet_energy = 0.5f * (wet_l * wet_l + wet_r * wet_r);
+        wet_energy_env += ((wet_energy > wet_energy_env) ? wet_env_attack : wet_env_release) * (wet_energy - wet_energy_env);
+        wet_energy_env = clampf(wet_energy_env, 0.0f, 12.0f);
+        const float wet_rms = sqrtf(fmaxf(wet_energy_env, 0.0f));
+        const float wet_ref = clampf(0.14f + 0.28f * depth, 0.08f, 0.42f);
+        const float wet_comp_raw = wet_ref / fmaxf(wet_rms, kWetDenomFloor);
+        const float wet_comp_limited = clampf(wet_comp_raw, kWetCompMin, kWetCompMax);
+        const float wet_comp = 1.0f + (wet_comp_limited - 1.0f) * clampf(0.20f + 0.80f * depth, 0.0f, 1.0f);
+
+        if (stereo_crossfeed > 0.0f) {
+            const float wet_l_src = wet_l;
+            const float wet_r_src = wet_r;
+            wet_l = wet_l_src + stereo_crossfeed * (wet_r_src - wet_l_src);
+            wet_r = wet_r_src + stereo_crossfeed * (wet_l_src - wet_r_src);
+        }
+
+        const float lfo_rate_norm = clampf((smoothed_user.lfo_rate_hz - 0.20f) / 2.80f, 0.0f, 1.0f);
+        const float vibrato_trim = clampf(1.0f - 0.22f * depth * (1.0f - lfo_rate_norm), 0.78f, 1.0f);
+        const float wet_gain = mode_chorus ? (wet_gain_base * wet_comp) : vibrato_trim;
+        const float mixed_l = mode_chorus ? (dry_l * dry_gain + wet_l * wet_gain) : (wet_l * wet_gain);
+        const float mixed_r = mode_chorus ? (dry_r * dry_gain + wet_r * wet_gain) : (wet_r * wet_gain);
+        efxoutl[i] = final_gain * lpanning * mixed_l;
         efxoutr[i] = final_gain * rpanning * mixed_r;
     }
 }
