@@ -171,6 +171,11 @@ enum class FeedbackProfile : uint8_t {
     ModernFeedback,
 };
 
+enum class VibeProfile : uint8_t {
+    Classic = 0,
+    Modern,
+};
+
 struct FeedbackProfileCoefs {
     float hp_fc_hz;
     float lp_fc_hz;
@@ -198,6 +203,7 @@ enum class VibeVoicing : uint8_t {
 
 struct VibePreset {
     VibeVoicing voicing = VibeVoicing::ClassicChorus;
+    VibeProfile profile = VibeProfile::Classic;
     VibeUserParams user{};
     VibeTuningParams tuning{};
     bool chorus_mode = true;
@@ -209,6 +215,7 @@ struct VibePreset {
 struct VibeParams {
     VibeUserParams user;
     VibeTuningParams tuning;
+    VibeProfile profile = VibeProfile::Classic;
     LfoShape lfo_shape = LfoShape::Sine;
     FeedbackProfile feedback_profile = FeedbackProfile::ClassicFeedback;
     bool legacy_saturation = false;
@@ -315,6 +322,32 @@ static inline void sanitize_user_params(VibeUserParams *params) {
     params->sat_out_trim = clampf(params->sat_out_trim, 0.60f, 1.20f);
 }
 
+static inline void apply_profile_to_preset(VibePreset *preset) {
+    if (!preset) {
+        return;
+    }
+
+    if (preset->profile == VibeProfile::Modern) {
+        // Modern: cleaner sweep, lower irregularity, wider image, more stable spectral response.
+        preset->tuning.stereo_phase_offset *= 1.08f;
+        preset->tuning.lamp_attack_sec *= 0.86f;
+        preset->tuning.lamp_release_sec *= 0.90f;
+        preset->tuning.lamp_hysteresis *= 0.80f;
+        preset->tuning.stage_time_spread *= 0.72f;
+        preset->user.drift_amount *= 0.72f;
+        preset->feedback_profile = FeedbackProfile::ModernFeedback;
+    } else {
+        // Classic: tighter stereo center, more lamp inertia, a touch more mismatch/time spread.
+        preset->tuning.stereo_phase_offset *= 0.86f;
+        preset->tuning.lamp_attack_sec *= 1.20f;
+        preset->tuning.lamp_release_sec *= 1.24f;
+        preset->tuning.lamp_hysteresis *= 1.16f;
+        preset->tuning.stage_time_spread *= 1.20f;
+        preset->user.drift_amount *= 1.10f;
+        preset->feedback_profile = FeedbackProfile::ClassicFeedback;
+    }
+}
+
 static VibePreset make_vibe_preset(VibeVoicing voicing) {
     VibePreset preset;
     preset.voicing = voicing;
@@ -323,6 +356,7 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
 
     switch (voicing) {
         case VibeVoicing::ClassicVibrato:
+            preset.profile = VibeProfile::Classic;
             preset.chorus_mode = false;
             preset.user.mix = 1.0f;
             preset.user.depth = 0.86f;
@@ -331,6 +365,7 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.lfo_shape = LfoShape::Sine;
             break;
         case VibeVoicing::DeepThrob:
+            preset.profile = VibeProfile::Classic;
             preset.chorus_mode = true;
             preset.user.depth = 0.98f;
             preset.user.feedback = 0.48f;
@@ -344,6 +379,7 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.lfo_shape = LfoShape::TriangleSmooth;
             break;
         case VibeVoicing::ModernWide:
+            preset.profile = VibeProfile::Modern;
             preset.chorus_mode = true;
             preset.user.depth = 0.90f;
             preset.user.feedback = 0.36f;
@@ -360,6 +396,7 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             break;
         case VibeVoicing::ClassicChorus:
         default:
+            preset.profile = VibeProfile::Classic;
             preset.chorus_mode = true;
             preset.user.mix = 0.50f;
             preset.user.tone_tilt = 0.0f;
@@ -368,6 +405,7 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             break;
     }
 
+    apply_profile_to_preset(&preset);
     sanitize_user_params(&preset.user);
     return preset;
 }
@@ -408,7 +446,7 @@ public:
         drift_lfo_phase = 0.0f;
     }
 
-    void processSample(float *l, float *r, const VibeUserParams &user, const VibeTuningParams &tuning, LfoShape shape) {
+    void processSample(float *l, float *r, const VibeUserParams &user, const VibeTuningParams &tuning, LfoShape shape, VibeProfile profile) {
         const float freq = clampf(user.lfo_rate_hz, 0.02f, 12.0f);
         const float drift_amount = clampf(user.drift_amount, 0.0f, 0.05f);
         const float drift_rate_hz = clampf(user.drift_rate_hz, 0.005f, 0.5f);
@@ -419,19 +457,22 @@ public:
 
         drift_lfo_phase += drift_rate_hz * cSAMPLE_RATE;
         if (drift_lfo_phase >= 1.0f) drift_lfo_phase -= 1.0f;
-        const float drift = 1.0f + drift_amount * (0.65f * drift_state + 0.35f * sinf(2.0f * kPi * drift_lfo_phase));
+        const float profile_drift_scale = (profile == VibeProfile::Modern) ? 0.82f : 1.08f;
+        const float drift = 1.0f + (drift_amount * profile_drift_scale) * (0.65f * drift_state + 0.35f * sinf(2.0f * kPi * drift_lfo_phase));
 
         phase += freq * drift * cSAMPLE_RATE;
         if (phase >= 1.0f) phase -= 1.0f;
 
-        float p_r = phase + clampf(tuning.stereo_phase_offset, -0.5f, 0.5f);
+        const float stereo_scale = (profile == VibeProfile::Modern) ? 1.06f : 0.92f;
+        float p_r = phase + clampf(tuning.stereo_phase_offset * stereo_scale, -0.5f, 0.5f);
         if (p_r < 0.0f) p_r += 1.0f;
         if (p_r >= 1.0f) p_r -= 1.0f;
 
         const float raw_l = apply_shape(shape, phase);
         const float raw_r = apply_shape(shape, p_r);
 
-        const float smooth_hz = 4.0f + 120.0f * clampf(tuning.lfo_shape_smoothing, 0.01f, 1.0f);
+        const float profile_smooth_scale = (profile == VibeProfile::Modern) ? 1.12f : 0.92f;
+        const float smooth_hz = (4.0f + 120.0f * clampf(tuning.lfo_shape_smoothing, 0.01f, 1.0f)) * profile_smooth_scale;
         const float smoothing = 1.0f - expf(-2.0f * kPi * smooth_hz * cSAMPLE_RATE);
         shape_state_l += smoothing * (raw_l - shape_state_l);
         shape_state_r += smoothing * (raw_r - shape_state_r);
@@ -522,7 +563,7 @@ private:
     void update_smoothed_user_params();
     float bjt_shape(float data, float drive);
     float hp_pre(float x, float hz, float &x1, float &y1);
-    float feedback_profile_process(float x, FeedbackProfile profile, FeedbackMidState &mid_state);
+    float feedback_profile_process(float x, FeedbackProfile profile, VibeProfile vibe_profile, FeedbackMidState &mid_state);
     float tone_tilt_process(float x, float tilt, float &lp);
 };
 
@@ -850,6 +891,7 @@ void Vibe::set_voicing(VibeVoicing voicing_id) {
     const VibePreset preset = make_vibe_preset(voicing_id);
     params.user = preset.user;
     params.tuning = preset.tuning;
+    params.profile = preset.profile;
     params.lfo_shape = preset.lfo_shape;
     params.feedback_profile = preset.feedback_profile;
     params.legacy_saturation = preset.legacy_saturation;
@@ -942,12 +984,13 @@ float Vibe::hp_pre(float x, float hz, float &x1, float &y1) {
     return y;
 }
 
-float Vibe::feedback_profile_process(float x, FeedbackProfile profile, FeedbackMidState &mid_state) {
+float Vibe::feedback_profile_process(float x, FeedbackProfile profile, VibeProfile vibe_profile, FeedbackMidState &mid_state) {
     const FeedbackProfileCoefs coefs = feedback_profile_coefs(profile);
     const float hp_fc = clampf(coefs.hp_fc_hz, 250.0f, 700.0f);
     const float lp_fc = clampf(coefs.lp_fc_hz, 1000.0f, 1800.0f);
     const float hp_a = expf(-2.0f * kPi * hp_fc * cSAMPLE_RATE);
-    const float lp_a = 1.0f - expf(-2.0f * kPi * lp_fc * cSAMPLE_RATE);
+    const float lp_profile_scale = (vibe_profile == VibeProfile::Modern) ? 1.08f : 0.84f;
+    const float lp_a = 1.0f - expf(-2.0f * kPi * (lp_fc * lp_profile_scale) * cSAMPLE_RATE);
 
     // Cascaded 1-pole HP + 1-pole LP yields a lightweight mid band around ~700-1.2 kHz.
     const float hp_y = hp_a * (mid_state.hp_y1 + x - mid_state.hp_x1);
@@ -958,6 +1001,10 @@ float Vibe::feedback_profile_process(float x, FeedbackProfile profile, FeedbackM
     const float mid = mid_state.lp_y1;
     const float high = hp_y - mid;
     const float shaped = coefs.dry * x + coefs.mid * mid + coefs.high * high;
+    if (vibe_profile == VibeProfile::Classic) {
+        const float mid_grit = soft_clip_cubic(mid * 1.6f) * 0.08f;
+        return clampf(shaped + mid_grit, -1.25f, 1.25f);
+    }
     return clampf(shaped, -1.25f, 1.25f);
 }
 
@@ -984,10 +1031,11 @@ void Vibe::init_vibes() {
 
     uint32_t component_rng = rng_seed ^ 0x51F15EEDu;
     for (int i = 0; i < 8; i++) {
+        const float mismatch_scale = (params.profile == VibeProfile::Modern) ? 0.75f : 1.15f;
         float cap_var = 1.0f + 0.10f * noise_bipolar(component_rng);
         C1[i] = base_C1[i] * cap_var;
         // Pequeno mismatch físico (aproximação) para quebrar simetria perfeita entre células.
-        stage[i].ldr_mismatch = 1.0f + 0.025f * noise_bipolar(component_rng);
+        stage[i].ldr_mismatch = 1.0f + (0.025f * mismatch_scale) * noise_bipolar(component_rng);
         // Pequeno espalhamento criativo para "chewiness" sem fugir do voicing clássico.
         stage_lamp_slew[i] = 1.0f + params.tuning.stage_time_spread * noise_bipolar(component_rng);
         stage_lamp_slew[i] = clampf(stage_lamp_slew[i], 0.85f, 1.15f);
@@ -1073,7 +1121,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
         smoothed_user.sat_out_trim = sat_trim_ramp.tick();
 
         float lfol = 0.0f, lfor = 0.0f;
-        lfo.processSample(&lfol, &lfor, smoothed_user, params.tuning, params.lfo_shape);
+        lfo.processSample(&lfol, &lfor, smoothed_user, params.tuning, params.lfo_shape, params.profile);
 
         const float depth = depth_ramp.tick();
         const float sweep_min = sweep_min_ramp.tick();
@@ -1082,7 +1130,8 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float target_l = sweep_min + depth * lfol * sweep_span;
         const float target_r = sweep_min + depth * lfor * sweep_span;
         const float hyst = clampf(params.tuning.lamp_hysteresis, 0.0f, 0.20f);
-        const float mem_base = clampf(0.08f + 7.0f * hyst, 0.02f, 0.75f);
+        const float profile_mem_scale = (params.profile == VibeProfile::Modern) ? 0.86f : 1.14f;
+        const float mem_base = clampf((0.08f + 7.0f * hyst) * profile_mem_scale, 0.02f, 0.75f);
 
         const float mem_a_up_l = mem_base;
         const float mem_a_dn_l = mem_base * 0.58f;
@@ -1154,12 +1203,13 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float dyn_k3 = 0.36f; // depth weight
         const float dyn_min = 0.75f;
         const float dyn_max = 3.10f;
-        const bool classic_chorus_profile = mode_chorus && (params.voicing == VibeVoicing::ClassicChorus);
-        const float classic_stereo_reduction = classic_chorus_profile ? 0.88f : 1.0f;
+        const bool classic_profile = (params.profile == VibeProfile::Classic);
+        const bool classic_chorus_profile = mode_chorus && classic_profile && (params.voicing == VibeVoicing::ClassicChorus);
+        const float classic_stereo_reduction = classic_chorus_profile ? 0.88f : (classic_profile ? 0.93f : 1.06f);
 
         float dry_l = smpsl[i];
         dry_l = hp_pre(dry_l, pre_hpf_hz, pre_hpf_x1_l, pre_hpf_y1_l);
-        const float fb_in_l = feedback_profile_process(fbl, params.feedback_profile, fb_mid_l);
+        const float fb_in_l = feedback_profile_process(fbl, params.feedback_profile, params.profile, fb_mid_l);
         const float in_probe_l = fabsf(fb_in_l + dry_l);
         input_env_l += ((in_probe_l > input_env_l) ? input_env_attack : input_env_release) * (in_probe_l - input_env_l);
         const float dynamic_drive_l = clampf(dyn_base + dyn_k1 * input_env_l + dyn_k2 * feedback + dyn_k3 * depth, dyn_min, dyn_max);
@@ -1189,7 +1239,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
 
         float dry_r = smpsr[i];
         dry_r = hp_pre(dry_r, pre_hpf_hz, pre_hpf_x1_r, pre_hpf_y1_r);
-        const float fb_in_r = feedback_profile_process(fbr, params.feedback_profile, fb_mid_r);
+        const float fb_in_r = feedback_profile_process(fbr, params.feedback_profile, params.profile, fb_mid_r);
         const float in_probe_r = fabsf(fb_in_r + dry_r);
         input_env_r += ((in_probe_r > input_env_r) ? input_env_attack : input_env_release) * (in_probe_r - input_env_r);
         const float dynamic_drive_r = clampf(dyn_base + dyn_k1 * input_env_r + dyn_k2 * feedback + dyn_k3 * depth, dyn_min, dyn_max);
