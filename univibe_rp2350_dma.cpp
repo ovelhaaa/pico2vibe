@@ -124,7 +124,7 @@ struct VibeUserParams {
     float depth = 0.85f;
     float feedback = 0.42f;
     float mix = 0.50f;
-    float input_drive = 3.5f;
+    float input_drive = 2.3f;
     float output_gain = 1.0f;
     float sweep_min = 0.58f;
     float sweep_max = 0.98f;
@@ -243,7 +243,7 @@ static inline VibeParamSpec vibe_param_spec(VibeParamId id) {
         case VibeParamId::Depth:      return {0.0f, 1.0f, 0.85f};
         case VibeParamId::Feedback:   return {0.0f, 0.65f, 0.42f};
         case VibeParamId::Mix:        return {0.0f, 1.0f, 0.50f};
-        case VibeParamId::InputDrive: return {0.5f, 6.0f, 3.5f};
+        case VibeParamId::InputDrive: return {0.5f, 6.0f, 2.3f};
         case VibeParamId::OutputGain: return {0.25f, 2.0f, 1.0f};
         case VibeParamId::SweepMin:   return {0.0f, 1.0f, 0.58f};
         case VibeParamId::SweepMax:   return {0.0f, 1.0f, 0.98f};
@@ -348,7 +348,7 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.user.depth = 0.90f;
             preset.user.feedback = 0.36f;
             preset.user.mix = 0.60f;
-            preset.user.input_drive = 3.9f;
+            preset.user.input_drive = 2.9f;
             preset.user.pre_hpf_hz = 35.0f;
             preset.user.tone_tilt = 0.14f;
             preset.user.sat_asymmetry = 0.12f;
@@ -508,6 +508,7 @@ private:
     FeedbackMidState fb_mid_l{};
     FeedbackMidState fb_mid_r{};
     float fb_env_l = 0.0f, fb_env_r = 0.0f;
+    float input_env_l = 0.0f, input_env_r = 0.0f;
     float wet_env_l = 0.0f, wet_env_r = 0.0f;
     float tone_lp_l = 0.0f, tone_lp_r = 0.0f;
     float lamp_memory_l = 0.0f, lamp_memory_r = 0.0f;
@@ -831,6 +832,8 @@ void Vibe::reseed(uint32_t seed) {
     fb_mid_r = {};
     fb_env_l = 0.0f;
     fb_env_r = 0.0f;
+    input_env_l = 0.0f;
+    input_env_r = 0.0f;
     sanitize_user_params(&params.user);
     smoothed_user = params.user;
     lfo.reseed(rng_seed ^ 0xA511E9B3u);
@@ -915,12 +918,19 @@ void Vibe::update_smoothed_user_params() {
 
 float Vibe::bjt_shape(float data, float drive) {
     if (params.legacy_saturation) {
+        // Legacy path kept only for A/B comparison with historical behavior.
         return fast_soft_clip(data * drive) * params.tuning.bjt_gain_trim;
     }
     const float asym = smoothed_user.sat_asymmetry;
-    const float driven = (data + asym) * drive;
-    const float sat = tanhf(driven) + 0.08f * tanhf(3.0f * driven);
-    return (sat - tanhf(asym * drive)) * params.tuning.bjt_gain_trim * smoothed_user.sat_out_trim;
+    const float headroom = 0.84f; // Higher base headroom before adaptive drive takes over.
+    const float x = (data * headroom + asym) * drive;
+    const float x2 = x * x;
+    // Cubic-rational saturator: musical rounding at low CPU cost, no oversampling required.
+    const float sat = x * (27.0f + x2) / (27.0f + 9.0f * x2);
+    const float xa = asym * drive;
+    const float xa2 = xa * xa;
+    const float sat_bias = xa * (27.0f + xa2) / (27.0f + 9.0f * xa2);
+    return (sat - sat_bias) * params.tuning.bjt_gain_trim * smoothed_user.sat_out_trim;
 }
 
 float Vibe::hp_pre(float x, float hz, float &x1, float &y1) {
@@ -1135,13 +1145,25 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float wet_env_floor = 1.0e-4f;
         const float wet_comp_min = 0.84140f; // -1.5 dB
         const float wet_comp_max = 1.18850f; // +1.5 dB
+        const float input_env_attack = 1.0f - expf(-2.0f * kPi * 180.0f * cSAMPLE_RATE);
+        const float input_env_release = 1.0f - expf(-2.0f * kPi * 16.0f * cSAMPLE_RATE);
+        // Adaptive drive coefficients: trade-off musical feel vs CPU/complexity.
+        const float dyn_base = clampf(0.80f + 0.34f * input_drive, 0.80f, 2.20f);
+        const float dyn_k1 = 1.05f; // input envelope weight
+        const float dyn_k2 = 0.92f; // feedback weight
+        const float dyn_k3 = 0.36f; // depth weight
+        const float dyn_min = 0.75f;
+        const float dyn_max = 3.10f;
         const bool classic_chorus_profile = mode_chorus && (params.voicing == VibeVoicing::ClassicChorus);
         const float classic_stereo_reduction = classic_chorus_profile ? 0.88f : 1.0f;
 
         float dry_l = smpsl[i];
         dry_l = hp_pre(dry_l, pre_hpf_hz, pre_hpf_x1_l, pre_hpf_y1_l);
         const float fb_in_l = feedback_profile_process(fbl, params.feedback_profile, fb_mid_l);
-        float input = bjt_shape(fb_in_l + dry_l, input_drive);
+        const float in_probe_l = fabsf(fb_in_l + dry_l);
+        input_env_l += ((in_probe_l > input_env_l) ? input_env_attack : input_env_release) * (in_probe_l - input_env_l);
+        const float dynamic_drive_l = clampf(dyn_base + dyn_k1 * input_env_l + dyn_k2 * feedback + dyn_k3 * depth, dyn_min, dyn_max);
+        float input = bjt_shape(fb_in_l + dry_l, dynamic_drive_l);
 
         for (int j = 0; j < 4; j++) {
             float cvolt = vibefilter(input, &stage[j].ecvc) +
@@ -1149,7 +1171,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
             cvolt = clampf(cvolt, -stage_limit, stage_limit);
             float ocvolt = clampf(vibefilter(cvolt, &stage[j].vcvo), -stage_limit, stage_limit);
             stage[j].oldcvolt = ocvolt;
-            input = bjt_shape(ocvolt + vibefilter(input, &stage[j].vevo), input_drive);
+            input = bjt_shape(ocvolt + vibefilter(input, &stage[j].vevo), dynamic_drive_l);
         }
 
         float fb_raw_l = clampf(stage[3].oldcvolt * feedback, -1.20f, 1.20f);
@@ -1168,7 +1190,10 @@ void Vibe::out(float *smpsl, float *smpsr) {
         float dry_r = smpsr[i];
         dry_r = hp_pre(dry_r, pre_hpf_hz, pre_hpf_x1_r, pre_hpf_y1_r);
         const float fb_in_r = feedback_profile_process(fbr, params.feedback_profile, fb_mid_r);
-        input = bjt_shape(fb_in_r + dry_r, input_drive);
+        const float in_probe_r = fabsf(fb_in_r + dry_r);
+        input_env_r += ((in_probe_r > input_env_r) ? input_env_attack : input_env_release) * (in_probe_r - input_env_r);
+        const float dynamic_drive_r = clampf(dyn_base + dyn_k1 * input_env_r + dyn_k2 * feedback + dyn_k3 * depth, dyn_min, dyn_max);
+        input = bjt_shape(fb_in_r + dry_r, dynamic_drive_r);
 
         for (int j = 4; j < 8; j++) {
             float cvolt = vibefilter(input, &stage[j].ecvc) +
@@ -1176,7 +1201,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
             cvolt = clampf(cvolt, -stage_limit, stage_limit);
             float ocvolt = clampf(vibefilter(cvolt, &stage[j].vcvo), -stage_limit, stage_limit);
             stage[j].oldcvolt = ocvolt;
-            input = bjt_shape(ocvolt + vibefilter(input, &stage[j].vevo), input_drive);
+            input = bjt_shape(ocvolt + vibefilter(input, &stage[j].vevo), dynamic_drive_r);
         }
 
         float fb_raw_r = clampf(stage[7].oldcvolt * feedback, -1.20f, 1.20f);
