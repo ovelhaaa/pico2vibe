@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cmath>
 #include <cstdlib>
 #include <stdexcept>
@@ -11,6 +12,33 @@
 #undef private
 
 namespace {
+
+#if !defined(NDEBUG)
+inline void debug_assert_finite(float v, const char* label) {
+    (void)label;
+    assert(std::isfinite(v) && "Vibe state NaN/Inf detected");
+}
+
+void debug_assert_vibe_state_finite(const Vibe* vibe) {
+    debug_assert_finite(vibe->fbl, "fbl");
+    debug_assert_finite(vibe->fbr, "fbr");
+    debug_assert_finite(vibe->lamp_state_l, "lamp_state_l");
+    debug_assert_finite(vibe->lamp_state_r, "lamp_state_r");
+    for (int i = 0; i < 8; ++i) {
+        debug_assert_finite(vibe->stage[i].oldcvolt, "stage.oldcvolt");
+        debug_assert_finite(vibe->stage[i].vc.x1, "stage.vc.x1");
+        debug_assert_finite(vibe->stage[i].vc.y1, "stage.vc.y1");
+        debug_assert_finite(vibe->stage[i].vcvo.x1, "stage.vcvo.x1");
+        debug_assert_finite(vibe->stage[i].vcvo.y1, "stage.vcvo.y1");
+        debug_assert_finite(vibe->stage[i].ecvc.x1, "stage.ecvc.x1");
+        debug_assert_finite(vibe->stage[i].ecvc.y1, "stage.ecvc.y1");
+        debug_assert_finite(vibe->stage[i].vevo.x1, "stage.vevo.x1");
+        debug_assert_finite(vibe->stage[i].vevo.y1, "stage.vevo.y1");
+    }
+}
+#else
+inline void debug_assert_vibe_state_finite(const Vibe*) {}
+#endif
 
 float clamp_finite(float v, float lo, float hi, float fallback = 0.0f) {
     if (!std::isfinite(v)) {
@@ -172,6 +200,7 @@ void DesktopUnivibeProcessor::process_in_place(std::vector<float>& left, std::ve
 
         if (impl_->user.engine_mode == UnivibeParams::EngineMode::legacy && impl_->legacy) {
             impl_->legacy->out(impl_->in_l.data(), impl_->in_r.data());
+            debug_assert_vibe_state_finite(impl_->legacy);
             sanitize_vibe_state(impl_->legacy);
             for (size_t i = 0; i < take; ++i) {
                 left[pos + i] = impl_->diff_l[i];
@@ -179,10 +208,12 @@ void DesktopUnivibeProcessor::process_in_place(std::vector<float>& left, std::ve
             }
         } else {
             impl_->improved->out(impl_->in_l.data(), impl_->in_r.data());
+            debug_assert_vibe_state_finite(impl_->improved);
             sanitize_vibe_state(impl_->improved);
 
             if (impl_->user.compare_mode == UnivibeParams::CompareMode::difference && impl_->legacy) {
                 impl_->legacy->out(impl_->in_l.data(), impl_->in_r.data());
+                debug_assert_vibe_state_finite(impl_->legacy);
                 sanitize_vibe_state(impl_->legacy);
                 for (size_t i = 0; i < take; ++i) {
                     left[pos + i] = impl_->out_l[i] - impl_->diff_l[i];
