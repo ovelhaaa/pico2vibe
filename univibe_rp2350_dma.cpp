@@ -135,7 +135,6 @@ struct VibeUserParams {
     float tone_tilt = 0.0f;
     float sat_asymmetry = 0.08f;
     float sat_out_trim = 0.95f;
-    float lfo_skew = 0.10f;
 };
 
 struct VibeTuningParams {
@@ -163,10 +162,8 @@ struct VibeTuningParams {
 };
 
 enum class LfoShape : uint8_t {
-    Legacy = 0,
-    ClassicBulb,
+    Sine = 0,
     TriangleSmooth,
-    SineSkew,
 };
 
 enum class FeedbackColor : uint8_t {
@@ -187,7 +184,7 @@ struct VibePreset {
     VibeUserParams user{};
     VibeTuningParams tuning{};
     bool chorus_mode = true;
-    LfoShape lfo_shape = LfoShape::ClassicBulb;
+    LfoShape lfo_shape = LfoShape::Sine;
     FeedbackColor feedback_color = FeedbackColor::Flat;
     bool legacy_saturation = false;
 };
@@ -195,7 +192,7 @@ struct VibePreset {
 struct VibeParams {
     VibeUserParams user;
     VibeTuningParams tuning;
-    LfoShape lfo_shape = LfoShape::ClassicBulb;
+    LfoShape lfo_shape = LfoShape::Sine;
     FeedbackColor feedback_color = FeedbackColor::Flat;
     bool legacy_saturation = false;
     VibeVoicing voicing = VibeVoicing::ClassicChorus;
@@ -216,7 +213,6 @@ enum class VibeParamId : uint8_t {
     ToneTilt,
     SatAsymmetry,
     SatOutTrim,
-    LfoSkew,
 };
 
 struct VibeParamSpec {
@@ -241,7 +237,6 @@ static inline VibeParamSpec vibe_param_spec(VibeParamId id) {
         case VibeParamId::ToneTilt:   return {-1.0f, 1.0f, 0.0f};
         case VibeParamId::SatAsymmetry:return {-0.25f, 0.25f, 0.08f};
         case VibeParamId::SatOutTrim: return {0.60f, 1.20f, 0.95f};
-        case VibeParamId::LfoSkew:    return {-0.45f, 0.45f, 0.10f};
         default:                      return {0.0f, 1.0f, 0.0f};
     }
 }
@@ -262,7 +257,6 @@ static inline float *vibe_param_slot(VibeUserParams &params, VibeParamId id) {
         case VibeParamId::ToneTilt:    return &params.tone_tilt;
         case VibeParamId::SatAsymmetry:return &params.sat_asymmetry;
         case VibeParamId::SatOutTrim:  return &params.sat_out_trim;
-        case VibeParamId::LfoSkew:     return &params.lfo_skew;
         default:                       return nullptr;
     }
 }
@@ -283,7 +277,6 @@ static inline const float *vibe_param_slot(const VibeUserParams &params, VibePar
         case VibeParamId::ToneTilt:    return &params.tone_tilt;
         case VibeParamId::SatAsymmetry:return &params.sat_asymmetry;
         case VibeParamId::SatOutTrim:  return &params.sat_out_trim;
-        case VibeParamId::LfoSkew:     return &params.lfo_skew;
         default:                       return nullptr;
     }
 }
@@ -303,7 +296,6 @@ static inline void sanitize_user_params(VibeUserParams *params) {
     params->tone_tilt = clampf(params->tone_tilt, -1.0f, 1.0f);
     params->sat_asymmetry = clampf(params->sat_asymmetry, -0.25f, 0.25f);
     params->sat_out_trim = clampf(params->sat_out_trim, 0.60f, 1.20f);
-    params->lfo_skew = clampf(params->lfo_skew, -0.45f, 0.45f);
 }
 
 static VibePreset make_vibe_preset(VibeVoicing voicing) {
@@ -319,8 +311,7 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.user.depth = 0.86f;
             preset.user.feedback = 0.38f;
             preset.user.lfo_rate_hz = 1.25f;
-            preset.user.lfo_skew = 0.08f;
-            preset.lfo_shape = LfoShape::ClassicBulb;
+            preset.lfo_shape = LfoShape::Sine;
             break;
         case VibeVoicing::DeepThrob:
             preset.chorus_mode = true;
@@ -331,10 +322,9 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.user.sweep_min = 0.50f;
             preset.user.sweep_max = 1.0f;
             preset.user.pre_hpf_hz = 28.0f;
-            preset.user.lfo_skew = 0.16f;
             preset.tuning.lamp_hysteresis = 0.032f;
             preset.feedback_color = FeedbackColor::Dark;
-            preset.lfo_shape = LfoShape::ClassicBulb;
+            preset.lfo_shape = LfoShape::TriangleSmooth;
             break;
         case VibeVoicing::ModernWide:
             preset.chorus_mode = true;
@@ -347,10 +337,9 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.user.sat_asymmetry = 0.12f;
             preset.user.lfo_rate_hz = 1.05f;
             preset.user.drift_amount = 0.022f;
-            preset.user.lfo_skew = -0.08f;
             preset.tuning.stereo_phase_offset = 0.31f;
             preset.feedback_color = FeedbackColor::Bright;
-            preset.lfo_shape = LfoShape::SineSkew;
+            preset.lfo_shape = LfoShape::Sine;
             break;
         case VibeVoicing::ClassicChorus:
         default:
@@ -358,7 +347,7 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.user.mix = 0.50f;
             preset.user.tone_tilt = 0.0f;
             preset.feedback_color = FeedbackColor::Flat;
-            preset.lfo_shape = LfoShape::ClassicBulb;
+            preset.lfo_shape = LfoShape::Sine;
             break;
     }
 
@@ -379,41 +368,16 @@ private:
     uint32_t drift_rng = 0xA341316Cu;
     float drift_lfo_phase = 0.0f;
 
-    static float shape_triangle_smooth(float p, float skew) {
-        skew = clampf(skew, -0.45f, 0.45f);
-        const float split = clampf(0.5f + 0.35f * skew, 0.1f, 0.9f);
-        const float tri = (p < split) ? (p / split) : (1.0f - (p - split) / (1.0f - split));
+    static float shape_triangle_smooth(float p) {
+        const float tri = (p < 0.5f) ? (p * 2.0f) : (2.0f - p * 2.0f);
         return tri * tri * (3.0f - 2.0f * tri);
     }
 
-    static float shape_sine_skew(float p, float skew) {
-        const float s = clampf(skew, -0.45f, 0.45f);
-        const float warp = p + s * (p - p * p);
-        const float x = clampf(warp, 0.0f, 1.0f);
-        return 0.5f + 0.5f * sinf(2.0f * kPi * (x - 0.25f));
-    }
-
-    static float shape_classic_bulb(float p, float skew) {
-        // Approximação criativa de "bulb inertia": subida mais rápida, queda mais relaxada.
-        const float split = clampf(0.42f + 0.18f * skew, 0.18f, 0.82f);
-        float x = 0.0f;
-        if (p < split) {
-            const float t = p / split;
-            x = t * t * (2.4f - 1.4f * t);
-        } else {
-            const float t = (p - split) / (1.0f - split);
-            x = 1.0f - t * (1.10f - 0.10f * t);
-        }
-        return clampf(x, 0.0f, 1.0f);
-    }
-
-    static float apply_shape(LfoShape shape, float phase_v, float skew) {
+    static float apply_shape(LfoShape shape, float phase_v) {
         switch (shape) {
-            case LfoShape::Legacy:         return (phase_v < 0.4f) ? (phase_v * 2.5f) : (1.0f - (phase_v - 0.4f) * 1.6666f);
-            case LfoShape::TriangleSmooth: return shape_triangle_smooth(phase_v, skew);
-            case LfoShape::SineSkew:       return shape_sine_skew(phase_v, skew);
-            case LfoShape::ClassicBulb:
-            default:                       return shape_classic_bulb(phase_v, skew);
+            case LfoShape::TriangleSmooth: return shape_triangle_smooth(phase_v);
+            case LfoShape::Sine:
+            default:                       return 0.5f + 0.5f * sinf(2.0f * kPi * (phase_v - 0.25f));
         }
     }
 
@@ -447,9 +411,8 @@ public:
         if (p_r < 0.0f) p_r += 1.0f;
         if (p_r >= 1.0f) p_r -= 1.0f;
 
-        const float skew = user.lfo_skew;
-        const float raw_l = apply_shape(shape, phase, skew);
-        const float raw_r = apply_shape(shape, p_r, skew);
+        const float raw_l = apply_shape(shape, phase);
+        const float raw_r = apply_shape(shape, p_r);
 
         const float smooth_hz = 4.0f + 120.0f * clampf(tuning.lfo_shape_smoothing, 0.01f, 1.0f);
         const float smoothing = 1.0f - expf(-2.0f * kPi * smooth_hz * cSAMPLE_RATE);
@@ -918,7 +881,6 @@ void Vibe::update_smoothed_user_params() {
     smooth_to_target(smoothed_user.tone_tilt, params.user.tone_tilt);
     smooth_to_target(smoothed_user.sat_asymmetry, params.user.sat_asymmetry);
     smooth_to_target(smoothed_user.sat_out_trim, params.user.sat_out_trim);
-    smooth_to_target(smoothed_user.lfo_skew, params.user.lfo_skew);
     sanitize_user_params(&smoothed_user);
 }
 
@@ -1077,12 +1039,20 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float sweep_span = clampf(sweep_max - sweep_min, 0.0f, 1.0f);
         const float target_l = sweep_min + depth * lfol * sweep_span;
         const float target_r = sweep_min + depth * lfor * sweep_span;
-        const float hyst = params.tuning.lamp_hysteresis;
+        const float hyst = clampf(params.tuning.lamp_hysteresis, 0.0f, 0.20f);
+        const float mem_base = clampf(0.08f + 7.0f * hyst, 0.02f, 0.75f);
 
-        const float target_l_h = target_l + hyst * (target_l - lamp_memory_l);
-        const float target_r_h = target_r + hyst * (target_r - lamp_memory_r);
-        lamp_memory_l = target_l_h;
-        lamp_memory_r = target_r_h;
+        const float mem_a_up_l = mem_base;
+        const float mem_a_dn_l = mem_base * 0.58f;
+        const float mem_a_up_r = mem_base;
+        const float mem_a_dn_r = mem_base * 0.58f;
+        lamp_memory_l += ((target_l > lamp_memory_l) ? mem_a_up_l : mem_a_dn_l) * (target_l - lamp_memory_l);
+        lamp_memory_r += ((target_r > lamp_memory_r) ? mem_a_up_r : mem_a_dn_r) * (target_r - lamp_memory_r);
+        lamp_memory_l = clampf(lamp_memory_l, 0.0f, 1.0f);
+        lamp_memory_r = clampf(lamp_memory_r, 0.0f, 1.0f);
+
+        const float target_l_h = 0.5f + 0.5f * tanhf((lamp_memory_l - 0.5f) * 2.3f);
+        const float target_r_h = 0.5f + 0.5f * tanhf((lamp_memory_r - 0.5f) * 2.3f);
 
         const float stage_slew_l = stage_lamp_slew[0];
         const float stage_slew_r = stage_lamp_slew[4];
