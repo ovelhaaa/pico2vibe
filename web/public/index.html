@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>pico2vibe web preview</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main>
+    <h1>pico2vibe • WASM preview</h1>
+    <input id="file" type="file" accept="audio/*" />
+    <select id="voicing"></select>
+    <div id="params" class="grid"></div>
+    <div class="row">
+      <button id="render">Render</button>
+      <button id="playIn">Play original</button>
+      <button id="playOut">Play processed</button>
+      <button id="stop">Stop</button>
+      <button id="export">Export WAV</button>
+    </div>
+    <p id="status">Loading WASM…</p>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
