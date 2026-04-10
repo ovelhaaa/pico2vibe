@@ -1,10 +1,10 @@
 import createModule from './vibe_wasm.js';
 const ctx = new AudioContext();
-const st = {mod:null,h:0,inBuf:null,outBuf:null,src:null,params:[]};
+const st = {mod:null,h:0,inBuf:null,outBuf:null,src:null,controls:[]};
 const $ = (id)=>document.getElementById(id);
 const status=(s)=>$('status').textContent=s;
 
-function play(buf){ stop(); const src=ctx.createBufferSource(); src.buffer=buf; src.connect(ctx.destination); src.start(); st.src=src; }
+async function play(buf){ if(ctx.state!=='running'){ await ctx.resume(); } stop(); const src=ctx.createBufferSource(); src.buffer=buf; src.connect(ctx.destination); src.start(); st.src=src; }
 function stop(){ if(st.src){ try{st.src.stop();}catch{} st.src=null; } }
 
 function toStereoArrays(buf){
@@ -18,6 +18,15 @@ async function resampleTo44100(buf){
   const off = new OfflineAudioContext(2, Math.ceil(buf.duration*44100), 44100);
   const src = off.createBufferSource(); src.buffer = buf; src.connect(off.destination); src.start();
   return await off.startRendering();
+}
+
+
+function syncControlsFromEngine(){
+  for (const ctl of st.controls){
+    const v=st.mod._vibe_get_param(st.h, ctl.id);
+    ctl.input.value=String(v);
+    ctl.txt.textContent=v.toFixed(3);
+  }
 }
 
 function encodeWav(l,r,sr){ const n=l.length; const ab=new ArrayBuffer(44+n*4); const dv=new DataView(ab); const w=(o,s)=>[...s].forEach((c,i)=>dv.setUint8(o+i,c.charCodeAt(0))); w(0,'RIFF'); dv.setUint32(4,36+n*4,true); w(8,'WAVEfmt '); dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,2,true); dv.setUint32(24,sr,true); dv.setUint32(28,sr*4,true); dv.setUint16(32,4,true); dv.setUint16(34,16,true); w(36,'data'); dv.setUint32(40,n*4,true); let o=44; for(let i=0;i<n;i++){ dv.setInt16(o,Math.max(-1,Math.min(1,l[i]))*32767,true); o+=2; dv.setInt16(o,Math.max(-1,Math.min(1,r[i]))*32767,true); o+=2;} return new Blob([ab],{type:'audio/wav'}); }
@@ -34,11 +43,13 @@ async function boot(){
     wrap.innerHTML=`<label>${name}</label><input type="range" min="${min}" max="${max}" step="${(max-min)/400}" value="${def}"><div>${def.toFixed(3)}</div>`;
     const input=wrap.querySelector('input'),txt=wrap.querySelector('div');
     input.oninput=()=>{const v=parseFloat(input.value); txt.textContent=v.toFixed(3); st.mod._vibe_set_param(st.h,i,v);};
+    st.controls.push({id:i,input,txt});
     params.appendChild(wrap);
   }
   const voicing=$('voicing');
   for(let i=0;i<st.mod._vibe_get_voicing_count();i++){ const op=document.createElement('option'); op.value=i; op.textContent=st.mod.UTF8ToString(st.mod._vibe_get_voicing_name(i)); voicing.appendChild(op);} 
-  voicing.onchange=()=>st.mod._vibe_set_voicing(st.h,parseInt(voicing.value));
+  voicing.onchange=()=>{ st.mod._vibe_set_voicing(st.h,parseInt(voicing.value)); syncControlsFromEngine(); };
+  syncControlsFromEngine();
   status('Ready');
 }
 
@@ -54,8 +65,8 @@ $('render').onclick=()=>{
   st.mod._free(pl);st.mod._free(pr);st.mod._free(ol);st.mod._free(orr);
   const out=ctx.createBuffer(2,n,44100); out.copyToChannel(outL,0); out.copyToChannel(outR,1); st.outBuf=out; status('Done');
 };
-$('playIn').onclick=()=>st.inBuf&&play(st.inBuf);
-$('playOut').onclick=()=>st.outBuf&&play(st.outBuf);
+$('playIn').onclick=async()=>{ if(st.inBuf) await play(st.inBuf); };
+$('playOut').onclick=async()=>{ if(st.outBuf) await play(st.outBuf); };
 $('stop').onclick=stop;
 $('export').onclick=()=>{ if(!st.outBuf)return; const b=encodeWav(st.outBuf.getChannelData(0),st.outBuf.getChannelData(1),44100); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='processed.wav'; a.click();};
 

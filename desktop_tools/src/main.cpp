@@ -35,7 +35,6 @@ void print_usage() {
         << "  --output-gain <0.25..2>   (padrao: 1.0)\n"
         << "  --tone-tilt <-1..1>       (padrao: 0.0)\n"
         << "  --pre-hpf <8..160>        (padrao: 22)\n"
-        << "  --lfo-skew <-0.45..0.45>  (padrao: 0.1)\n"
         << "  --seed <int>              (padrao: 1)\n"
         << "  --wav-format <pcm16|float32> (padrao: pcm16)\n"
         << "  --help\n";
@@ -153,8 +152,6 @@ int main(int argc, char** argv) {
                 params.tone_tilt = std::stof(next());
             } else if (arg == "--pre-hpf") {
                 params.pre_hpf_hz = std::stof(next());
-            } else if (arg == "--lfo-skew") {
-                params.lfo_skew = std::stof(next());
             } else if (arg == "--seed") {
                 params.seed = static_cast<uint32_t>(std::stoul(next()));
             } else if (arg == "--wav-format") {

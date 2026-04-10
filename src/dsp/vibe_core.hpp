@@ -40,6 +40,9 @@ static inline float fast_soft_clip(float x) {
 }
 
 static inline float clampf(float v, float lo, float hi) {
+    if (!std::isfinite(v)) {
+        return lo;
+    }
     return (v < lo) ? lo : ((v > hi) ? hi : v);
 }
 
@@ -416,11 +419,10 @@ public:
         drift_lfo_phase = 0.0f;
     }
 
-    void processSample(float *l, float *r, const VibeUserParams &user, const VibeTuningParams &tuning, LfoShape shape, VibeProfile profile) {
+    void processSample(float *l, float *r, const VibeUserParams &user, const VibeTuningParams &tuning, LfoShape shape, VibeProfile profile, float drift_alpha, float smoothing) {
         const float freq = clampf(user.lfo_rate_hz, 0.02f, 12.0f);
         const float drift_amount = clampf(user.drift_amount, 0.0f, 0.05f);
         const float drift_rate_hz = clampf(user.drift_rate_hz, 0.005f, 0.5f);
-        const float drift_alpha = 1.0f - expf(-2.0f * kPi * drift_rate_hz * cSAMPLE_RATE);
 
         drift_state += drift_alpha * (noise_bipolar(drift_rng) - drift_state);
         drift_state = clampf(drift_state, -1.0f, 1.0f);
@@ -441,9 +443,6 @@ public:
         const float raw_l = apply_shape(shape, phase);
         const float raw_r = apply_shape(shape, p_r);
 
-        const float profile_smooth_scale = (profile == VibeProfile::Modern) ? 1.12f : 0.92f;
-        const float smooth_hz = (4.0f + 120.0f * clampf(tuning.lfo_shape_smoothing, 0.01f, 1.0f)) * profile_smooth_scale;
-        const float smoothing = 1.0f - expf(-2.0f * kPi * smooth_hz * cSAMPLE_RATE);
         shape_state_l += smoothing * (raw_l - shape_state_l);
         shape_state_r += smoothing * (raw_r - shape_state_r);
 
@@ -830,12 +829,11 @@ float Vibe::vibefilter(float data, fparams *ftype) {
 }
 
 void Vibe::update_time_constants() {
-    const float block_time = fPERIOD / fSAMPLE_RATE;
     const float attack_sec = clampf(params.tuning.lamp_attack_sec, 0.001f, 0.250f);
     const float release_sec = clampf(params.tuning.lamp_release_sec, 0.001f, 0.500f);
 
-    lamp_attack = 1.0f - expf(-block_time / attack_sec);
-    lamp_release = 1.0f - expf(-block_time / release_sec);
+    lamp_attack = 1.0f - expf(-cSAMPLE_RATE / attack_sec);
+    lamp_release = 1.0f - expf(-cSAMPLE_RATE / release_sec);
 }
 
 void Vibe::reseed(uint32_t seed) {
@@ -873,6 +871,9 @@ void Vibe::set_voicing(VibeVoicing voicing_id) {
     params.voicing = voicing_id;
     mode_chorus = preset.chorus_mode;
     sanitize_user_params(&params.user);
+    smoothed_user = params.user;
+    update_time_constants();
+    init_vibes();
 }
 
 void Vibe::set_param(VibeParamId id, float value) {
@@ -1099,12 +1100,22 @@ void Vibe::out(float *smpsl, float *smpsr) {
     sat_asym_ramp.begin(prev.sat_asymmetry, smoothed_user.sat_asymmetry, PERIOD);
     sat_trim_ramp.begin(prev.sat_out_trim, smoothed_user.sat_out_trim, PERIOD);
 
+    const float drift_alpha = 1.0f - expf(-2.0f * kPi * clampf(smoothed_user.drift_rate_hz, 0.005f, 0.5f) * cSAMPLE_RATE);
+    const float profile_smooth_scale = (params.profile == VibeProfile::Modern) ? 1.12f : 0.92f;
+    const float smooth_hz = (4.0f + 120.0f * clampf(params.tuning.lfo_shape_smoothing, 0.01f, 1.0f)) * profile_smooth_scale;
+    const float lfo_smoothing = 1.0f - expf(-2.0f * kPi * smooth_hz * cSAMPLE_RATE);
+
+    float mod_res_l = params.tuning.ldr_dark_ohms;
+    float mod_res_r = params.tuning.ldr_dark_ohms;
+    float wet_comp_l_raw_state = 1.0f;
+    float wet_comp_r_raw_state = 1.0f;
+
     for (int i = 0; i < PERIOD; i++) {
         smoothed_user.sat_asymmetry = sat_asym_ramp.tick();
         smoothed_user.sat_out_trim = sat_trim_ramp.tick();
 
         float lfol = 0.0f, lfor = 0.0f;
-        lfo.processSample(&lfol, &lfor, smoothed_user, params.tuning, params.lfo_shape, params.profile);
+        lfo.processSample(&lfol, &lfor, smoothed_user, params.tuning, params.lfo_shape, params.profile, drift_alpha, lfo_smoothing);
 
         const float depth = depth_ramp.tick();
         const float sweep_min = sweep_min_ramp.tick();
@@ -1147,10 +1158,14 @@ void Vibe::out(float *smpsl, float *smpsr) {
         float res_r = params.tuning.ldr_dark_ohms * expf(-params.tuning.ldr_curve * bright_r);
         res_l = clampf(res_l, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
         res_r = clampf(res_r, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
-        modulate(res_l, res_r);
+        if ((i & 0x3) == 0) {
+            mod_res_l = res_l;
+            mod_res_r = res_r;
+            modulate(mod_res_l, mod_res_r);
+        }
 
-        const float emitterfb_l = clampf(params.tuning.emitter_fb_scale / res_l, params.tuning.emitter_fb_min, params.tuning.emitter_fb_max);
-        const float emitterfb_r = clampf(params.tuning.emitter_fb_scale / res_r, params.tuning.emitter_fb_min, params.tuning.emitter_fb_max);
+        const float emitterfb_l = clampf(params.tuning.emitter_fb_scale / mod_res_l, params.tuning.emitter_fb_min, params.tuning.emitter_fb_max);
+        const float emitterfb_r = clampf(params.tuning.emitter_fb_scale / mod_res_r, params.tuning.emitter_fb_min, params.tuning.emitter_fb_max);
         const float feedback_knob = fb_ramp.tick();
         const float feedback = clampf(feedback_musical_gain(feedback_knob), 0.0f, 0.70f);
         const float input_drive = drive_ramp.tick();
@@ -1266,10 +1281,12 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float inv_env_l = wet_ref / fmaxf(wet_env_l, wet_env_floor);
         const float inv_env_r = wet_ref / fmaxf(wet_env_r, wet_env_floor);
         const float depth_comp_amt = clampf(depth * (0.55f + 0.45f * mix), 0.0f, 1.0f);
-        const float wet_comp_l_raw = clampf(powf(inv_env_l, 0.20f), wet_comp_min, wet_comp_max);
-        const float wet_comp_r_raw = clampf(powf(inv_env_r, 0.20f), wet_comp_min, wet_comp_max);
-        const float wet_comp_l = 1.0f + (wet_comp_l_raw - 1.0f) * depth_comp_amt;
-        const float wet_comp_r = 1.0f + (wet_comp_r_raw - 1.0f) * depth_comp_amt;
+        if ((i & 0x3) == 0) {
+            wet_comp_l_raw_state = clampf(powf(inv_env_l, 0.20f), wet_comp_min, wet_comp_max);
+            wet_comp_r_raw_state = clampf(powf(inv_env_r, 0.20f), wet_comp_min, wet_comp_max);
+        }
+        const float wet_comp_l = 1.0f + (wet_comp_l_raw_state - 1.0f) * depth_comp_amt;
+        const float wet_comp_r = 1.0f + (wet_comp_r_raw_state - 1.0f) * depth_comp_amt;
 
         // Vibrato remains 100% wet, but trim depth-dependently to avoid overstatement at low rates/high depth.
         const float vibrato_trim = clampf(1.0f - 0.12f * depth * depth, 0.85f, 1.0f);
