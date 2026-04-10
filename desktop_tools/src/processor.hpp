@@ -28,7 +28,6 @@ struct UnivibeParams {
     float output_gain = 1.0f;
     float tone_tilt = 0.0f;
     float pre_hpf_hz = 22.0f;
-    float lfo_skew = 0.1f;
     float sat_asymmetry = 0.08f;
     float sat_out_trim = 0.95f;
     Preset preset = Preset::classic_chorus;

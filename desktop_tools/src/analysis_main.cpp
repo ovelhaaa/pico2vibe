@@ -72,28 +72,24 @@ UnivibeParams preset_params(const std::string& name) {
         p.mode_chorus = true;
         p.rate_hz = 1.2f;
         p.depth = 0.6f;
-        p.width = 0.8f;
         p.feedback = 0.45f;
         p.mix = 1.0f;
     } else if (name == "subtle") {
         p.mode_chorus = true;
         p.rate_hz = 0.75f;
         p.depth = 0.35f;
-        p.width = 0.55f;
         p.feedback = 0.2f;
         p.mix = 0.65f;
     } else if (name == "deep") {
         p.mode_chorus = true;
         p.rate_hz = 1.8f;
         p.depth = 0.95f;
-        p.width = 1.0f;
         p.feedback = 0.6f;
         p.mix = 1.0f;
     } else if (name == "vibrato") {
         p.mode_chorus = false;
         p.rate_hz = 4.0f;
         p.depth = 0.8f;
-        p.width = 0.85f;
         p.feedback = 0.3f;
         p.mix = 1.0f;
     } else {

@@ -8,7 +8,7 @@
 #include <stdexcept>
 
 #define private public
-#include "vibe_core.generated.hpp"
+#include "dsp/vibe_core.hpp"
 #undef private
 
 namespace {
@@ -126,7 +126,6 @@ struct DesktopUnivibeProcessor::Impl {
         improved->set_param(VibeParamId::OutputGain, p.output_gain);
         improved->set_param(VibeParamId::ToneTilt, p.tone_tilt);
         improved->set_param(VibeParamId::PreHpfHz, p.pre_hpf_hz);
-        improved->set_param(VibeParamId::LfoSkew, p.lfo_skew);
         improved->set_param(VibeParamId::SatAsymmetry, p.sat_asymmetry);
         improved->set_param(VibeParamId::SatOutTrim, p.sat_out_trim);
         improved->mode_chorus = p.mode_chorus;
@@ -135,8 +134,8 @@ struct DesktopUnivibeProcessor::Impl {
             legacy = new Vibe(diff_l.data(), diff_r.data());
             legacy->reseed(p.seed);
             legacy->set_voicing(VibeVoicing::ClassicChorus);
-            legacy->params.lfo_shape = LfoShape::Legacy;
-            legacy->params.feedback_color = FeedbackColor::Flat;
+            legacy->params.lfo_shape = LfoShape::Sine;
+            legacy->params.feedback_profile = FeedbackProfile::ClassicFeedback;
             legacy->params.legacy_saturation = true;
             legacy->set_param(VibeParamId::Depth, p.depth);
             legacy->set_param(VibeParamId::Feedback, p.feedback);
