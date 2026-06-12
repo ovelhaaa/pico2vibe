@@ -20,10 +20,10 @@ struct UnivibeParams {
     };
 
     bool mode_chorus = true;
-    float rate_hz = 1.2f;
-    float depth = 0.6f;
-    float feedback = 0.45f;
-    float mix = 0.5f;
+    float rate_hz = 0.85f;
+    float depth = 0.78f;
+    float feedback = 0.34f;
+    float mix = 0.48f;
     float input_drive = 3.5f;
     float output_gain = 1.0f;
     float tone_tilt = 0.0f;

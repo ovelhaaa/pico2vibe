@@ -136,6 +136,8 @@ struct DesktopUnivibeProcessor::Impl {
             legacy->set_voicing(VibeVoicing::ClassicChorus);
             legacy->params.lfo_shape = LfoShape::Sine;
             legacy->params.feedback_profile = FeedbackProfile::ClassicFeedback;
+            legacy->params.musical.auto_level_amount = 1.0f;
+            legacy->params.musical.stereo_width = 1.0f;
             legacy->params.legacy_saturation = true;
             legacy->set_param(VibeParamId::Depth, p.depth);
             legacy->set_param(VibeParamId::Feedback, p.feedback);

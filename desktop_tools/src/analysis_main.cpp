@@ -69,28 +69,32 @@ std::vector<float> parse_list(const std::string& csv) {
 UnivibeParams preset_params(const std::string& name) {
     UnivibeParams p;
     if (name == "classic") {
+        p.preset = UnivibeParams::Preset::classic_chorus;
         p.mode_chorus = true;
-        p.rate_hz = 1.2f;
-        p.depth = 0.6f;
-        p.feedback = 0.45f;
-        p.mix = 1.0f;
+        p.rate_hz = 0.85f;
+        p.depth = 0.78f;
+        p.feedback = 0.34f;
+        p.mix = 0.48f;
     } else if (name == "subtle") {
+        p.preset = UnivibeParams::Preset::modern_wide;
         p.mode_chorus = true;
-        p.rate_hz = 0.75f;
-        p.depth = 0.35f;
-        p.feedback = 0.2f;
-        p.mix = 0.65f;
+        p.rate_hz = 1.20f;
+        p.depth = 0.82f;
+        p.feedback = 0.30f;
+        p.mix = 0.58f;
     } else if (name == "deep") {
+        p.preset = UnivibeParams::Preset::deep_throb;
         p.mode_chorus = true;
-        p.rate_hz = 1.8f;
+        p.rate_hz = 0.65f;
         p.depth = 0.95f;
-        p.feedback = 0.6f;
-        p.mix = 1.0f;
+        p.feedback = 0.46f;
+        p.mix = 0.55f;
     } else if (name == "vibrato") {
+        p.preset = UnivibeParams::Preset::classic_vibrato;
         p.mode_chorus = false;
-        p.rate_hz = 4.0f;
-        p.depth = 0.8f;
-        p.feedback = 0.3f;
+        p.rate_hz = 1.10f;
+        p.depth = 0.72f;
+        p.feedback = 0.25f;
         p.mix = 1.0f;
     } else {
         throw std::runtime_error("Preset desconhecido: " + name);

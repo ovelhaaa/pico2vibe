@@ -23,11 +23,10 @@ class App:
         self.output_path = tk.StringVar(value=str(Path.cwd() / "output_univibe.wav"))
         self.mode = tk.StringVar(value="chorus")
         self.seed = tk.StringVar(value="1")
-        self.rate = tk.StringVar(value="1.2")
-        self.depth = tk.StringVar(value="0.6")
-        self.width = tk.StringVar(value="0.8")
-        self.feedback = tk.StringVar(value="0.45")
-        self.mix = tk.StringVar(value="1.0")
+        self.rate = tk.StringVar(value="0.85")
+        self.depth = tk.StringVar(value="0.78")
+        self.feedback = tk.StringVar(value="0.34")
+        self.mix = tk.StringVar(value="0.48")
 
         frm = ttk.Frame(root, padding=12)
         frm.pack(fill=tk.BOTH, expand=True)
@@ -40,9 +39,8 @@ class App:
         self._row_entry(frm, 4, "Seed", self.seed)
         self._row_entry(frm, 5, "Rate (Hz)", self.rate)
         self._row_entry(frm, 6, "Depth", self.depth)
-        self._row_entry(frm, 7, "Width", self.width)
-        self._row_entry(frm, 8, "Feedback", self.feedback)
-        self._row_entry(frm, 9, "Mix", self.mix)
+        self._row_entry(frm, 7, "Feedback", self.feedback)
+        self._row_entry(frm, 8, "Mix", self.mix)
 
         btns = ttk.Frame(frm)
         btns.grid(row=10, column=0, columnspan=3, sticky="w", pady=(14, 8))
@@ -110,7 +108,6 @@ class App:
             "--seed", self.seed.get().strip(),
             "--rate", self.rate.get().strip(),
             "--depth", self.depth.get().strip(),
-            "--width", self.width.get().strip(),
             "--feedback", self.feedback.get().strip(),
             "--mix", self.mix.get().strip(),
         ]
