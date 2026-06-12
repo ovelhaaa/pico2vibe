@@ -1,26 +1,127 @@
 <!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>pico2vibe web preview</title>
-  <link rel="stylesheet" href="styles.css" />
-</head>
-<body>
-  <main>
-    <h1>pico2vibe • WASM preview</h1>
-    <input id="file" type="file" accept="audio/*" />
-    <select id="voicing"></select>
-    <div id="params" class="grid"></div>
-    <div class="row">
-      <button id="render">Render</button>
-      <button id="playIn">Play original</button>
-      <button id="playOut">Play processed</button>
-      <button id="stop">Stop</button>
-      <button id="export">Export WAV</button>
-    </div>
-    <p id="status">Loading WASM…</p>
-  </main>
-  <script type="module" src="app.js"></script>
-</body>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pico2vibe • Studio WASM</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero panel">
+        <div>
+          <p class="eyebrow">Pico2Vibe / WebAssembly</p>
+          <h1>Estúdio Uni‑Vibe no navegador</h1>
+          <p class="lead">
+            Carregue uma guitarra, Rhodes, pad ou loop estéreo e molde o pulso
+            óptico com voicings musicais, controles agrupados e comparação A/B
+            imediata.
+          </p>
+        </div>
+        <div class="hero-meter" aria-hidden="true">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </section>
+
+      <section class="workflow">
+        <article class="panel upload-card">
+          <div class="section-heading">
+            <span class="step">1</span>
+            <div>
+              <h2>Fonte</h2>
+              <p>Arraste um áudio ou selecione um arquivo local.</p>
+            </div>
+          </div>
+          <label id="dropzone" class="dropzone" for="file">
+            <input id="file" type="file" accept="audio/*" />
+            <strong>Solte seu áudio aqui</strong>
+            <span>WAV, MP3, AIFF ou qualquer formato aceito pelo browser</span>
+          </label>
+          <dl class="file-meta">
+            <div>
+              <dt>Arquivo</dt>
+              <dd id="fileName">Nenhum carregado</dd>
+            </div>
+            <div>
+              <dt>Duração</dt>
+              <dd id="fileDuration">—</dd>
+            </div>
+            <div>
+              <dt>Formato interno</dt>
+              <dd>44.1 kHz / estéreo</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="panel voice-card">
+          <div class="section-heading">
+            <span class="step">2</span>
+            <div>
+              <h2>Voz musical</h2>
+              <p>Escolha uma personalidade antes de ajustar detalhes.</p>
+            </div>
+          </div>
+          <select id="voicing" aria-label="Voicing"></select>
+          <p id="voiceHint" class="hint">
+            Classic Chorus é o ponto de partida vintage e mono-compatível.
+          </p>
+          <div class="preset-row" aria-label="Cenas rápidas">
+            <button class="chip" type="button" data-scene="guitar">
+              Guitarra clean
+            </button>
+            <button class="chip" type="button" data-scene="lead">
+              Lead throb
+            </button>
+            <button class="chip" type="button" data-scene="keys">
+              Keys wide
+            </button>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel controls-panel">
+        <div class="section-heading large">
+          <span class="step">3</span>
+          <div>
+            <h2>Controles de timbre</h2>
+            <p>
+              Ajustes organizados como uma pedaleira: movimento, cor, ganho e
+              comportamento analógico.
+            </p>
+          </div>
+        </div>
+        <div id="params" class="control-groups"></div>
+      </section>
+
+      <section class="panel transport-panel">
+        <div class="section-heading large">
+          <span class="step">4</span>
+          <div>
+            <h2>Render, A/B e exportação</h2>
+            <p>
+              Processe offline com o mesmo core DSP do firmware e compare
+              antes/depois.
+            </p>
+          </div>
+        </div>
+        <canvas
+          id="scope"
+          width="980"
+          height="190"
+          aria-label="Forma de onda original e processada"
+        ></canvas>
+        <div class="transport row">
+          <button id="render" class="primary" type="button">
+            Renderizar vibe
+          </button>
+          <button id="playIn" type="button">Ouvir original</button>
+          <button id="playOut" type="button">Ouvir processado</button>
+          <button id="stop" type="button">Parar</button>
+          <button id="export" type="button">Exportar WAV</button>
+        </div>
+        <p id="status" class="status">Carregando WASM…</p>
+      </section>
+    </main>
+    <script type="module" src="app.js"></script>
+  </body>
 </html>
