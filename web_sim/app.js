@@ -9,13 +9,17 @@ const userDefs = [
   { key: "depth", label: "Depth", min: 0.0, max: 1.0, defaultValue: 0.85 },
   { key: "feedback", label: "Feedback", min: 0.0, max: 0.65, defaultValue: 0.42 },
   { key: "mix", label: "Mix", min: 0.0, max: 1.0, defaultValue: 0.5 },
-  { key: "input_drive", label: "Input Drive", min: 0.5, max: 6.0, defaultValue: 3.5 },
+  { key: "input_drive", label: "Input Drive", min: 0.5, max: 6.0, defaultValue: 2.3 },
   { key: "output_gain", label: "Output Gain", min: 0.25, max: 2.0, defaultValue: 1.0 },
   { key: "sweep_min", label: "Sweep Min", min: 0.0, max: 1.0, defaultValue: 0.58 },
   { key: "sweep_max", label: "Sweep Max", min: 0.0, max: 1.0, defaultValue: 0.98 },
   { key: "lfo_rate_hz", label: "LFO Rate", min: 0.02, max: 12.0, defaultValue: 1.2 },
   { key: "drift_amount", label: "Drift Amount", min: 0.0, max: 0.05, defaultValue: 0.018 },
   { key: "drift_rate_hz", label: "Drift Rate", min: 0.005, max: 0.5, defaultValue: 0.08 },
+  { key: "pre_hpf_hz", label: "Pre HPF", min: 8.0, max: 160.0, defaultValue: 22.0 },
+  { key: "tone_tilt", label: "Tone Tilt", min: -1.0, max: 1.0, defaultValue: 0.0 },
+  { key: "sat_asymmetry", label: "Sat Asymmetry", min: -0.25, max: 0.25, defaultValue: 0.08 },
+  { key: "sat_out_trim", label: "Sat Out Trim", min: 0.6, max: 1.2, defaultValue: 0.95 },
 ];
 
 const tuningDefs = [
@@ -33,6 +37,11 @@ const tuningDefs = [
   { key: "lfo_shape_smoothing", label: "LFO Shape Smooth", min: 0.01, max: 1.0, defaultValue: 0.2 },
   { key: "stereo_phase_offset", label: "Stereo Offset", min: 0.0, max: 0.5, defaultValue: 0.25 },
   { key: "control_smoothing_hz", label: "Control Smooth Hz", min: 1.0, max: 80.0, defaultValue: 18.0 },
+  { key: "lamp_hysteresis", label: "Lamp Hysteresis", min: 0.0, max: 0.2, defaultValue: 0.02 },
+  { key: "stage_time_spread", label: "Stage Time Spread", min: 0.0, max: 0.05, defaultValue: 0.012 },
+  { key: "feedback_sat", label: "Feedback Sat", min: 0.0, max: 1.0, defaultValue: 0.55 },
+  { key: "gain_comp_depth", label: "Gain Comp Depth", min: 0.0, max: 0.5, defaultValue: 0.18 },
+  { key: "tilt_hz", label: "Tilt Hz", min: 350.0, max: 2600.0, defaultValue: 850.0, logScale: true },
 ];
 
 const defaultUser = Object.fromEntries(userDefs.map((def) => [def.key, def.defaultValue]));
@@ -75,6 +84,18 @@ function fastSoftClip(x) {
   return x / (1 + Math.abs(x));
 }
 
+function softClipCubic(x) {
+  const xx = x * x;
+  return x * (27 + xx) / (27 + 9 * xx);
+}
+
+function feedbackMusicalGain(knob) {
+  const k = clamp(knob, 0, 0.65);
+  const normalized = k / 0.65;
+  const shaped = normalized * normalized * (3 - 2 * normalized);
+  return clamp(k + 0.10 * shaped * k, 0, 0.70);
+}
+
 function noiseBipolar(state) {
   state.value = (Math.imul(state.value, 1664525) + 1013904223) >>> 0;
   const uni = ((state.value >>> 8) & 0x00ffffff) / 16777215;
@@ -93,6 +114,7 @@ function makeStage() {
     vevo: makeFilterState(),
     oldcvolt: 0,
     ldr_mismatch: 1,
+    time_spread: 1,
   };
 }
 
@@ -107,6 +129,10 @@ function sanitizeUser(user) {
   user.lfo_rate_hz = clamp(user.lfo_rate_hz, 0.02, 12);
   user.drift_amount = clamp(user.drift_amount, 0, 0.05);
   user.drift_rate_hz = clamp(user.drift_rate_hz, 0.005, 0.5);
+  user.pre_hpf_hz = clamp(user.pre_hpf_hz, 8, 160);
+  user.tone_tilt = clamp(user.tone_tilt, -1, 1);
+  user.sat_asymmetry = clamp(user.sat_asymmetry, -0.25, 0.25);
+  user.sat_out_trim = clamp(user.sat_out_trim, 0.6, 1.2);
 }
 
 function sanitizeTuning(tuning) {
@@ -124,6 +150,11 @@ function sanitizeTuning(tuning) {
   tuning.lfo_shape_smoothing = clamp(tuning.lfo_shape_smoothing, 0.01, 1);
   tuning.stereo_phase_offset = clamp(tuning.stereo_phase_offset, 0, 0.5);
   tuning.control_smoothing_hz = clamp(tuning.control_smoothing_hz, 1, 80);
+  tuning.lamp_hysteresis = clamp(tuning.lamp_hysteresis, 0, 0.2);
+  tuning.stage_time_spread = clamp(tuning.stage_time_spread, 0, 0.05);
+  tuning.feedback_sat = clamp(tuning.feedback_sat, 0, 1);
+  tuning.gain_comp_depth = clamp(tuning.gain_comp_depth, 0, 0.5);
+  tuning.tilt_hz = clamp(tuning.tilt_hz, 350, 2600);
 }
 
 class EffectLFO {
@@ -182,6 +213,10 @@ class VibeEngine {
     this.en1 = new Float32Array(8);
     this.fbl = 0;
     this.fbr = 0;
+    this.preHpfL = { x1: 0, y1: 0 };
+    this.preHpfR = { x1: 0, y1: 0 };
+    this.toneLpL = 0;
+    this.toneLpR = 0;
     this.gainBjt = 0;
     this.k = 0;
     this.R1 = 0;
@@ -208,6 +243,10 @@ class VibeEngine {
     this.lampStateR = 0;
     this.fbl = 0;
     this.fbr = 0;
+    this.preHpfL = { x1: 0, y1: 0 };
+    this.preHpfR = { x1: 0, y1: 0 };
+    this.toneLpL = 0;
+    this.toneLpR = 0;
     this.smoothedUser = structuredClone(this.params.user);
     sanitizeUser(this.smoothedUser);
     this.lfo.reseed(this.rngSeed ^ 0xa511e9b3);
@@ -249,7 +288,36 @@ class VibeEngine {
   }
 
   bjtShape(data, drive) {
-    return fastSoftClip(data * drive) * this.params.tuning.bjt_gain_trim;
+    const asym = this.smoothedUser.sat_asymmetry;
+    const headroom = 0.84;
+    const x = (data * headroom + asym) * drive;
+    const sat = softClipCubic(x);
+    const xa = asym * drive;
+    const satBias = softClipCubic(xa);
+    return (sat - satBias) * this.params.tuning.bjt_gain_trim * this.smoothedUser.sat_out_trim;
+  }
+
+  hpPre(data, hz, state) {
+    const h = clamp(hz, 8, 160);
+    const a = Math.exp(-2 * PI * h * INV_SAMPLE_RATE);
+    const y = a * (state.y1 + data - state.x1);
+    state.x1 = data;
+    state.y1 = y;
+    return y;
+  }
+
+  toneTilt(data, tilt, channel) {
+    const fc = clamp(this.params.tuning.tilt_hz, 350, 2600);
+    const alpha = 1 - Math.exp(-2 * PI * fc * INV_SAMPLE_RATE);
+    const amt = clamp(tilt, -1, 1);
+    if (channel === "left") {
+      this.toneLpL += alpha * (data - this.toneLpL);
+      const high = data - this.toneLpL;
+      return data + amt * (0.85 * high - 0.65 * this.toneLpL);
+    }
+    this.toneLpR += alpha * (data - this.toneLpR);
+    const high = data - this.toneLpR;
+    return data + amt * (0.85 * high - 0.65 * this.toneLpR);
   }
 
   initVibes() {
@@ -264,6 +332,7 @@ class VibeEngine {
       this.C1[i] = baseC1[i] * (1 + 0.1 * noiseBipolar(componentRng));
       this.stage[i] = makeStage();
       this.stage[i].ldr_mismatch = 1 + 0.05 * noiseBipolar(componentRng);
+      this.stage[i].time_spread = 1 + this.params.tuning.stage_time_spread * noiseBipolar(componentRng);
       this.en1[i] = this.k * this.R1 * this.C1[i];
       this.en0[i] = 1;
     }
@@ -272,7 +341,7 @@ class VibeEngine {
   modulate(resL, resR) {
     for (let i = 0; i < 8; i += 1) {
       const baseRes = i < 4 ? resL : resR;
-      const stageRes = clamp(baseRes * this.stage[i].ldr_mismatch, this.params.tuning.ldr_min_ohms, this.params.tuning.ldr_max_ohms);
+      const stageRes = clamp(baseRes * this.stage[i].ldr_mismatch * this.stage[i].time_spread, this.params.tuning.ldr_min_ohms, this.params.tuning.ldr_max_ohms);
       const currentRv = 4700 + stageRes;
       const R1pRv = this.R1 + currentRv;
       const C2pC1 = this.C2 + this.C1[i];
@@ -325,8 +394,11 @@ class VibeEngine {
       const targetL = this.smoothedUser.sweep_min + this.smoothedUser.depth * lfo.left * (this.smoothedUser.sweep_max - this.smoothedUser.sweep_min);
       const targetR = this.smoothedUser.sweep_min + this.smoothedUser.depth * lfo.right * (this.smoothedUser.sweep_max - this.smoothedUser.sweep_min);
 
-      this.lampStateL += (targetL > this.lampStateL ? this.lampAttack : this.lampRelease) * (targetL - this.lampStateL);
-      this.lampStateR += (targetR > this.lampStateR ? this.lampAttack : this.lampRelease) * (targetR - this.lampStateR);
+      const hysteresis = clamp(this.params.tuning.lamp_hysteresis, 0, 0.2);
+      const lampTargetL = targetL + hysteresis * (targetL - this.lampStateL);
+      const lampTargetR = targetR + hysteresis * (targetR - this.lampStateR);
+      this.lampStateL += (lampTargetL > this.lampStateL ? this.lampAttack : this.lampRelease) * (lampTargetL - this.lampStateL);
+      this.lampStateR += (lampTargetR > this.lampStateR ? this.lampAttack : this.lampRelease) * (lampTargetR - this.lampStateR);
       this.lampStateL = clamp(this.lampStateL, 0, 1);
       this.lampStateR = clamp(this.lampStateR, 0, 1);
 
@@ -342,8 +414,9 @@ class VibeEngine {
       const frames = Math.min(PERIOD, leftIn.length - offset);
 
       for (let i = 0; i < frames; i += 1) {
-        const dryL = leftIn[offset + i];
-        let input = this.bjtShape(this.fbl + dryL, this.smoothedUser.input_drive);
+        const dryL = this.hpPre(leftIn[offset + i], this.smoothedUser.pre_hpf_hz, this.preHpfL);
+        const feedbackL = softClipCubic(this.fbl * (1 + this.params.tuning.feedback_sat));
+        let input = this.bjtShape(feedbackL + dryL, this.smoothedUser.input_drive);
         for (let j = 0; j < 4; j += 1) {
           let cvolt = this.vibefilter(input, this.stage[j].ecvc) + this.vibefilter(input + emitterFbL * this.stage[j].oldcvolt, this.stage[j].vc);
           cvolt = clamp(cvolt, -stageLimit, stageLimit);
@@ -351,15 +424,18 @@ class VibeEngine {
           this.stage[j].oldcvolt = ocvolt;
           input = this.bjtShape(ocvolt + this.vibefilter(input, this.stage[j].vevo), this.smoothedUser.input_drive);
         }
-        this.fbl = fastSoftClip(this.stage[3].oldcvolt * this.smoothedUser.feedback);
-        leftOut[offset + i] = this.smoothedUser.output_gain * (
+        this.fbl = clamp(softClipCubic(this.stage[3].oldcvolt * feedbackMusicalGain(this.smoothedUser.feedback)), -0.95, 0.95);
+        const wetL = this.toneTilt(input, this.smoothedUser.tone_tilt, "left");
+        const compL = 1 - this.params.tuning.gain_comp_depth * clamp(this.smoothedUser.depth, 0, 1) * 0.35;
+        leftOut[offset + i] = this.smoothedUser.output_gain * compL * (
           this.modeChorus
-            ? this.lpanning * (dryL * (1 - this.smoothedUser.mix) + input * this.smoothedUser.mix)
-            : this.lpanning * input
+            ? this.lpanning * (dryL * (1 - this.smoothedUser.mix) + wetL * this.smoothedUser.mix)
+            : this.lpanning * wetL
         );
 
-        const dryR = rightIn[offset + i];
-        input = this.bjtShape(this.fbr + dryR, this.smoothedUser.input_drive);
+        const dryR = this.hpPre(rightIn[offset + i], this.smoothedUser.pre_hpf_hz, this.preHpfR);
+        const feedbackR = softClipCubic(this.fbr * (1 + this.params.tuning.feedback_sat));
+        input = this.bjtShape(feedbackR + dryR, this.smoothedUser.input_drive);
         for (let j = 4; j < 8; j += 1) {
           let cvolt = this.vibefilter(input, this.stage[j].ecvc) + this.vibefilter(input + emitterFbR * this.stage[j].oldcvolt, this.stage[j].vc);
           cvolt = clamp(cvolt, -stageLimit, stageLimit);
@@ -367,11 +443,13 @@ class VibeEngine {
           this.stage[j].oldcvolt = ocvolt;
           input = this.bjtShape(ocvolt + this.vibefilter(input, this.stage[j].vevo), this.smoothedUser.input_drive);
         }
-        this.fbr = fastSoftClip(this.stage[7].oldcvolt * this.smoothedUser.feedback);
-        rightOut[offset + i] = this.smoothedUser.output_gain * (
+        this.fbr = clamp(softClipCubic(this.stage[7].oldcvolt * feedbackMusicalGain(this.smoothedUser.feedback)), -0.95, 0.95);
+        const wetR = this.toneTilt(input, this.smoothedUser.tone_tilt, "right");
+        const compR = 1 - this.params.tuning.gain_comp_depth * clamp(this.smoothedUser.depth, 0, 1) * 0.35;
+        rightOut[offset + i] = this.smoothedUser.output_gain * compR * (
           this.modeChorus
-            ? this.rpanning * (dryR * (1 - this.smoothedUser.mix) + input * this.smoothedUser.mix)
-            : this.rpanning * input
+            ? this.rpanning * (dryR * (1 - this.smoothedUser.mix) + wetR * this.smoothedUser.mix)
+            : this.rpanning * wetR
         );
       }
     }
