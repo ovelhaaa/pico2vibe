@@ -65,14 +65,17 @@ static inline float lerpf(float a, float b, float t) {
     return a + (b - a) * t;
 }
 
+constexpr float kLfoRateMinHz = 0.02f;
+constexpr float kLfoRateMaxHz = 12.0f;
+
 static inline float map_lfo_rate_normalized(float n) {
     n = clampf(n, 0.0f, 1.0f);
-    return 0.18f * powf(9.0f / 0.18f, n);
+    return kLfoRateMinHz * powf(kLfoRateMaxHz / kLfoRateMinHz, n);
 }
 
 static inline float unmap_lfo_rate_normalized(float hz) {
-    hz = clampf(hz, 0.18f, 9.0f);
-    return clampf(logf(hz / 0.18f) / logf(9.0f / 0.18f), 0.0f, 1.0f);
+    hz = clampf(hz, kLfoRateMinHz, kLfoRateMaxHz);
+    return clampf(logf(hz / kLfoRateMinHz) / logf(kLfoRateMaxHz / kLfoRateMinHz), 0.0f, 1.0f);
 }
 
 // Keeps low/mid feedback behavior familiar while giving the top of the knob
@@ -145,8 +148,7 @@ struct VibeTuningParams {
     float pre_hpf_hz_max = 160.0f;
 };
 
-static inline float ldr_resistance_from_brightness(float brightness, const VibeTuningParams &tuning) {
-    static constexpr float kDefaultCurve = 7.6009f;
+static inline float ldr_resistance_from_brightness(float brightness, const VibeTuningParams &tuning, float curve_scale) {
     static constexpr float kLdrCurveLut[256] = {
     1.00000000e+00f, 9.70632410e-01f, 9.42127275e-01f, 9.14459267e-01f, 8.87603802e-01f, 8.61537018e-01f, 8.36235752e-01f, 8.11677523e-01f,
     7.87840510e-01f, 7.64703533e-01f, 7.42246033e-01f, 7.20448056e-01f, 6.99290233e-01f, 6.78753764e-01f, 6.58820401e-01f, 6.39472434e-01f,
@@ -182,8 +184,7 @@ static inline float ldr_resistance_from_brightness(float brightness, const VibeT
     6.16009703e-04f, 5.97918982e-04f, 5.80359543e-04f, 5.63315782e-04f, 5.46772555e-04f, 5.30715162e-04f, 5.15129337e-04f, 5.00001230e-04f,
     };
 
-    const float curve = clampf(tuning.ldr_curve, 0.1f, 24.0f);
-    const float x = clampf(brightness, 0.0f, 1.0f) * (curve / kDefaultCurve);
+    const float x = clampf(brightness, 0.0f, 1.0f) * curve_scale;
     const float pos = clampf(x, 0.0f, 1.0f) * 255.0f;
     const int idx = (int)pos;
     const int idx2 = (idx < 255) ? (idx + 1) : 255;
@@ -294,7 +295,7 @@ static inline VibeParamSpec vibe_param_spec(VibeParamId id) {
         case VibeParamId::OutputGain: return {0.25f, 2.0f, 1.0f};
         case VibeParamId::SweepMin:   return {0.0f, 1.0f, 0.58f};
         case VibeParamId::SweepMax:   return {0.0f, 1.0f, 0.98f};
-        case VibeParamId::LfoRateHz:  return {0.02f, 12.0f, 1.20f};
+        case VibeParamId::LfoRateHz:  return {kLfoRateMinHz, kLfoRateMaxHz, 1.20f};
         case VibeParamId::DriftAmount:return {0.0f, 0.05f, 0.018f};
         case VibeParamId::DriftRateHz:return {0.005f, 0.5f, 0.08f};
         case VibeParamId::PreHpfHz:   return {8.0f, 160.0f, 22.0f};
@@ -353,7 +354,7 @@ static inline void sanitize_user_params(VibeUserParams *params) {
     params->output_gain = clampf(params->output_gain, 0.25f, 2.0f);
     params->sweep_min = clampf(params->sweep_min, 0.0f, 1.0f);
     params->sweep_max = clampf(params->sweep_max, params->sweep_min, 1.0f);
-    params->lfo_rate_hz = clampf(params->lfo_rate_hz, 0.02f, 12.0f);
+    params->lfo_rate_hz = clampf(params->lfo_rate_hz, kLfoRateMinHz, kLfoRateMaxHz);
     params->drift_amount = clampf(params->drift_amount, 0.0f, 0.05f);
     params->drift_rate_hz = clampf(params->drift_rate_hz, 0.005f, 0.5f);
     params->pre_hpf_hz = clampf(params->pre_hpf_hz, 8.0f, 160.0f);
@@ -482,13 +483,15 @@ private:
 
     static float shape_bulb_asym(float p) {
         p = clampf(p, 0.0f, 1.0f);
-        const float attack_end = 0.42f;
+        constexpr float attack_end = 0.42f;
+        constexpr float inv_attack_end = 1.0f / attack_end;
+        constexpr float inv_decay_len = 1.0f / (1.0f - attack_end);
         if (p < attack_end) {
-            const float t = p / attack_end;
+            const float t = p * inv_attack_end;
             const float eased = t * t * (3.0f - 2.0f * t);
             return eased;
         }
-        const float t = (p - attack_end) / (1.0f - attack_end);
+        const float t = (p - attack_end) * inv_decay_len;
         const float eased = t * t * (3.0f - 2.0f * t);
         return 1.0f - eased;
     }
@@ -513,7 +516,7 @@ public:
     }
 
     void processSample(float *l, float *r, const VibeUserParams &user, const VibeTuningParams &tuning, const VibeMusicalParams &musical, LfoShape shape, VibeProfile profile, float drift_alpha, float smoothing) {
-        const float freq = clampf(user.lfo_rate_hz, 0.02f, 12.0f);
+        const float freq = clampf(user.lfo_rate_hz, kLfoRateMinHz, kLfoRateMaxHz);
         const float drift_amount = clampf(user.drift_amount, 0.0f, 0.05f);
         const float drift_rate_hz = clampf(user.drift_rate_hz, 0.005f, 0.5f);
 
@@ -1206,6 +1209,23 @@ void Vibe::out(float *smpsl, float *smpsr) {
     const float smooth_hz = (4.0f + 120.0f * clampf(params.tuning.lfo_shape_smoothing, 0.01f, 1.0f)) * profile_smooth_scale;
     const float lfo_smoothing = 1.0f - expf(-2.0f * kPi * smooth_hz * cSAMPLE_RATE);
     const float auto_level = clampf(params.musical.auto_level_amount, 0.0f, 1.0f);
+    constexpr float kInvDefaultLdrCurve = 1.0f / 7.6009f;
+    const float ldr_curve_scale = clampf(params.tuning.ldr_curve, 0.1f, 24.0f) * kInvDefaultLdrCurve;
+    const float fb_lim_threshold = 0.78f + 0.06f * (1.0f - auto_level);
+    const float fb_lim_floor = 0.30f - 0.08f * (1.0f - auto_level);
+    constexpr float wet_env_floor = 1.0e-4f;
+    constexpr float wet_comp_min = 0.84140f; // -1.5 dB
+    constexpr float wet_comp_max = 1.18850f; // +1.5 dB
+    constexpr float dyn_k1 = 1.05f; // input envelope weight
+    constexpr float dyn_k2 = 0.92f; // feedback weight
+    constexpr float dyn_k3 = 0.36f; // depth weight
+    constexpr float dyn_min = 0.75f;
+    constexpr float dyn_max = 3.10f;
+    const bool classic_profile = (params.profile == VibeProfile::Classic);
+    const bool classic_chorus_profile = mode_chorus && classic_profile && (params.voicing == VibeVoicing::ClassicChorus);
+    const float profile_stereo_reduction = classic_chorus_profile ? 0.88f : (classic_profile ? 0.93f : 1.06f);
+    const float stereo_width = clampf(params.musical.stereo_width, 0.0f, 1.35f);
+    const float classic_stereo_reduction = clampf(profile_stereo_reduction * stereo_width, 0.0f, 1.35f);
 
     float mod_res_l = params.tuning.ldr_dark_ohms;
     float mod_res_r = params.tuning.ldr_dark_ohms;
@@ -1256,8 +1276,8 @@ void Vibe::out(float *smpsl, float *smpsr) {
 
         const float bright_l = lamp_state_l * sqrtf(lamp_state_l);
         const float bright_r = lamp_state_r * sqrtf(lamp_state_r);
-        const float res_l = ldr_resistance_from_brightness(bright_l, params.tuning);
-        const float res_r = ldr_resistance_from_brightness(bright_r, params.tuning);
+        const float res_l = ldr_resistance_from_brightness(bright_l, params.tuning, ldr_curve_scale);
+        const float res_r = ldr_resistance_from_brightness(bright_r, params.tuning, ldr_curve_scale);
         if ((i & 0x3) == 0) {
             mod_res_l = res_l;
             mod_res_r = res_r;
@@ -1284,27 +1304,12 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float final_gain = output_gain * output_trim_smoothed;
         const float hi_fb = clampf((feedback_knob - 0.42f) * (1.0f / 0.23f), 0.0f, 1.0f);
         const float clarity_boost = hi_fb * (0.70f + 0.30f * (1.0f - mix));
-        const float lamp_hot = clampf(0.5f * (lamp_state_l + lamp_state_r), 0.0f, 1.0f);
+        const float lamp_hot = 0.5f * (lamp_state_l + lamp_state_r);
         const float bulb_fb_drive = 1.0f + 0.8f * lamp_hot + 0.4f * feedback;
         const float fb_sat_drive = clampf((1.0f + params.tuning.feedback_sat) * bulb_fb_drive * (1.0f - 0.30f * clarity_boost), 0.75f, 2.80f);
         const float wet_core_blend = 0.24f * clarity_boost;
-        const float fb_lim_threshold = 0.78f + 0.06f * (1.0f - auto_level);
-        const float fb_lim_floor = 0.30f - 0.08f * (1.0f - auto_level);
-        const float wet_env_floor = 1.0e-4f;
-        const float wet_comp_min = 0.84140f; // -1.5 dB
-        const float wet_comp_max = 1.18850f; // +1.5 dB
-        // Adaptive drive coefficients: trade-off musical feel vs CPU/complexity.
+        // Adaptive drive base follows input drive; other coefficients are block constants.
         const float dyn_base = clampf(0.80f + 0.34f * input_drive, 0.80f, 2.20f);
-        const float dyn_k1 = 1.05f; // input envelope weight
-        const float dyn_k2 = 0.92f; // feedback weight
-        const float dyn_k3 = 0.36f; // depth weight
-        const float dyn_min = 0.75f;
-        const float dyn_max = 3.10f;
-        const bool classic_profile = (params.profile == VibeProfile::Classic);
-        const bool classic_chorus_profile = mode_chorus && classic_profile && (params.voicing == VibeVoicing::ClassicChorus);
-        const float profile_stereo_reduction = classic_chorus_profile ? 0.88f : (classic_profile ? 0.93f : 1.06f);
-        const float stereo_width = clampf(params.musical.stereo_width, 0.0f, 1.35f);
-        const float classic_stereo_reduction = clampf(profile_stereo_reduction * stereo_width, 0.0f, 1.35f);
 
         float dry_l = smpsl[i];
         dry_l = hp_pre(dry_l, pre_hpf_hz, pre_hpf_x1_l, pre_hpf_y1_l);
