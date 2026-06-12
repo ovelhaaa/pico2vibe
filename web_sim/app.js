@@ -41,7 +41,7 @@ const tuningDefs = [
   { key: "stage_time_spread", label: "Stage Time Spread", min: 0.0, max: 0.05, defaultValue: 0.012 },
   { key: "feedback_sat", label: "Feedback Sat", min: 0.0, max: 1.0, defaultValue: 0.55 },
   { key: "gain_comp_depth", label: "Gain Comp Depth", min: 0.0, max: 0.5, defaultValue: 0.18 },
-  { key: "tilt_hz", label: "Tilt Hz", min: 220.0, max: 3200.0, defaultValue: 850.0, logScale: true },
+  { key: "tilt_hz", label: "Tilt Hz", min: 350.0, max: 2600.0, defaultValue: 850.0, logScale: true },
 ];
 
 const defaultUser = Object.fromEntries(userDefs.map((def) => [def.key, def.defaultValue]));
@@ -154,7 +154,7 @@ function sanitizeTuning(tuning) {
   tuning.stage_time_spread = clamp(tuning.stage_time_spread, 0, 0.05);
   tuning.feedback_sat = clamp(tuning.feedback_sat, 0, 1);
   tuning.gain_comp_depth = clamp(tuning.gain_comp_depth, 0, 0.5);
-  tuning.tilt_hz = clamp(tuning.tilt_hz, 220, 3200);
+  tuning.tilt_hz = clamp(tuning.tilt_hz, 350, 2600);
 }
 
 class EffectLFO {
@@ -289,29 +289,35 @@ class VibeEngine {
 
   bjtShape(data, drive) {
     const asym = this.smoothedUser.sat_asymmetry;
-    const driven = data * drive;
-    const sat = softClipCubic(driven);
-    const biased = softClipCubic(driven + asym) - softClipCubic(asym);
-    return (0.78 * sat + 0.22 * biased) * this.params.tuning.bjt_gain_trim * this.smoothedUser.sat_out_trim;
+    const headroom = 0.84;
+    const x = (data * headroom + asym) * drive;
+    const sat = softClipCubic(x);
+    const xa = asym * drive;
+    const satBias = softClipCubic(xa);
+    return (sat - satBias) * this.params.tuning.bjt_gain_trim * this.smoothedUser.sat_out_trim;
   }
 
   hpPre(data, hz, state) {
-    const wc = Math.tan(PI * clamp(hz, 8, 160) * INV_SAMPLE_RATE);
-    const a = 1 / (1 + wc);
+    const h = clamp(hz, 8, 160);
+    const a = Math.exp(-2 * PI * h * INV_SAMPLE_RATE);
     const y = a * (state.y1 + data - state.x1);
     state.x1 = data;
-    state.y1 = y + DENORMAL_GUARD;
+    state.y1 = y;
     return y;
   }
 
   toneTilt(data, tilt, channel) {
-    const alpha = 1 - Math.exp(-2 * PI * clamp(this.params.tuning.tilt_hz, 220, 3200) * INV_SAMPLE_RATE);
+    const fc = clamp(this.params.tuning.tilt_hz, 350, 2600);
+    const alpha = 1 - Math.exp(-2 * PI * fc * INV_SAMPLE_RATE);
+    const amt = clamp(tilt, -1, 1);
     if (channel === "left") {
       this.toneLpL += alpha * (data - this.toneLpL);
-      return data + clamp(tilt, -1, 1) * (data - this.toneLpL) * 0.45;
+      const high = data - this.toneLpL;
+      return data + amt * (0.85 * high - 0.65 * this.toneLpL);
     }
     this.toneLpR += alpha * (data - this.toneLpR);
-    return data + clamp(tilt, -1, 1) * (data - this.toneLpR) * 0.45;
+    const high = data - this.toneLpR;
+    return data + amt * (0.85 * high - 0.65 * this.toneLpR);
   }
 
   initVibes() {

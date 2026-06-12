@@ -171,8 +171,8 @@ $('render').onclick = () => {
     st.mod.HEAPF32.set(l, pl >> 2);
     st.mod.HEAPF32.set(r, pr >> 2);
     st.mod._vibe_process_stereo(st.h, pl, pr, ol, orr, n);
-    const outL = new Float32Array(st.mod.HEAPF32.buffer, ol, n).slice();
-    const outR = new Float32Array(st.mod.HEAPF32.buffer, orr, n).slice();
+    const outL = st.mod.HEAPF32.subarray(ol >> 2, (ol >> 2) + n).slice();
+    const outR = st.mod.HEAPF32.subarray(orr >> 2, (orr >> 2) + n).slice();
     const out = getAudioContext().createBuffer(2, n, TARGET_SAMPLE_RATE);
     out.copyToChannel(outL, 0);
     out.copyToChannel(outR, 1);
@@ -199,9 +199,13 @@ $('export').onclick = () => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
-window.addEventListener('pagehide', () => {
+window.addEventListener('pagehide', (event) => {
   stop();
-  if (st.h && st.mod) st.mod._vibe_destroy(st.h);
+  if (event.persisted) return;
+  if (st.h && st.mod) {
+    st.mod._vibe_destroy(st.h);
+    st.h = 0;
+  }
 });
 
 boot().catch((e) => status(`Error: ${e.message}`));
