@@ -11,7 +11,6 @@
 #define PERIOD          32
 #define DMA_WORDS_PER_BLOCK   (PERIOD * CHANNELS)
 
-#define DENORMAL_GUARD  1e-18f
 #define cSAMPLE_RATE    (1.0f / SAMPLE_RATE)
 #define fSAMPLE_RATE    SAMPLE_RATE
 #define fPERIOD         ((float)PERIOD)
@@ -69,6 +68,10 @@ static inline float clampf(float v, float lo, float hi) {
         return lo;
     }
     return (v < lo) ? lo : ((v > hi) ? hi : v);
+}
+
+static inline float zap_denormal(float x) {
+    return (std::fabs(x) < 1.0e-20f) ? 0.0f : x;
 }
 
 static inline float noise_bipolar(uint32_t &state) {
@@ -946,9 +949,10 @@ Vibe::Vibe(float *efxoutl_, float *efxoutr_) : efxoutl(efxoutl_), efxoutr(efxout
 }
 
 float Vibe::vibefilter(float data, fparams *ftype) {
-    float y0 = data * ftype->n0 + ftype->x1 * ftype->n1 - ftype->y1 * ftype->d1;
-    ftype->y1 = y0 + DENORMAL_GUARD;
-    ftype->x1 = data;
+    const float y0_raw = data * ftype->n0 + ftype->x1 * ftype->n1 - ftype->y1 * ftype->d1;
+    const float y0 = zap_denormal(y0_raw);
+    ftype->y1 = y0;
+    ftype->x1 = zap_denormal(data);
     return y0;
 }
 
@@ -1089,8 +1093,8 @@ float Vibe::hp_pre(float x, float hz, float &x1, float &y1) {
     const float h = clampf(hz, params.tuning.pre_hpf_hz_min, params.tuning.pre_hpf_hz_max);
     const float a = expf(-2.0f * kPi * h * cSAMPLE_RATE);
     const float y = a * (y1 + x - x1);
-    x1 = x;
-    y1 = y;
+    x1 = zap_denormal(x);
+    y1 = zap_denormal(y);
     return y;
 }
 
@@ -1104,10 +1108,10 @@ float Vibe::feedback_profile_process(float x, FeedbackProfile profile, VibeProfi
 
     // Cascaded 1-pole HP + 1-pole LP yields a lightweight mid band around ~700-1.2 kHz.
     const float hp_y = hp_a * (mid_state.hp_y1 + x - mid_state.hp_x1);
-    mid_state.hp_x1 = x;
-    mid_state.hp_y1 = hp_y;
+    mid_state.hp_x1 = zap_denormal(x);
+    mid_state.hp_y1 = zap_denormal(hp_y);
 
-    mid_state.lp_y1 += lp_a * (hp_y - mid_state.lp_y1);
+    mid_state.lp_y1 = zap_denormal(mid_state.lp_y1 + lp_a * (hp_y - mid_state.lp_y1));
     const float mid = mid_state.lp_y1;
     const float high = hp_y - mid;
     const float shaped = coefs.dry * x + coefs.mid * mid + coefs.high * high;
@@ -1121,7 +1125,7 @@ float Vibe::feedback_profile_process(float x, FeedbackProfile profile, VibeProfi
 float Vibe::tone_tilt_process(float x, float tilt, float &lp) {
     const float fc = clampf(params.tuning.tilt_hz, 350.0f, 2600.0f);
     const float a = 1.0f - expf(-2.0f * kPi * fc * cSAMPLE_RATE);
-    lp += a * (x - lp);
+    lp = zap_denormal(lp + a * (x - lp));
     const float high = x - lp;
     const float amt = clampf(tilt, -1.0f, 1.0f);
     return x + amt * (0.85f * high - 0.65f * lp);
@@ -1401,7 +1405,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
                                 ? clampf(fb_lim_threshold / (fb_env_l + 1e-9f), fb_lim_floor, 1.0f)
                                 : 1.0f;
         // Invariant: feedback state is bounded to keep stereo lanes numerically stable.
-        fbl = clampf(fb_sat_l * fb_gain_l, -0.95f, 0.95f);
+        fbl = zap_denormal(clampf(fb_sat_l * fb_gain_l, -0.95f, 0.95f));
         const float wet_core_l = input;
         const float wet_air_l = tone_tilt_process(input, tone_tilt, tone_lp_l);
         float wet_l = wet_air_l + wet_core_blend * wet_core_l;
@@ -1432,7 +1436,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
                                 ? clampf(fb_lim_threshold / (fb_env_r + 1e-9f), fb_lim_floor, 1.0f)
                                 : 1.0f;
         // Invariant: mirrored bound for right feedback state.
-        fbr = clampf(fb_sat_r * fb_gain_r, -0.95f, 0.95f);
+        fbr = zap_denormal(clampf(fb_sat_r * fb_gain_r, -0.95f, 0.95f));
         const float wet_core_r = input;
         const float wet_air_r = tone_tilt_process(input, tone_tilt, tone_lp_r);
         float wet_r = wet_air_r + wet_core_blend * wet_core_r;
