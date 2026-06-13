@@ -1,7 +1,6 @@
 const SAMPLE_RATE = 44100;
 const PERIOD = 32;
 const CHANNELS = 2;
-const DENORMAL_GUARD = 1e-18;
 const INV_SAMPLE_RATE = 1 / SAMPLE_RATE;
 const PI = Math.PI;
 
@@ -78,6 +77,10 @@ const dom = {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function zapDenormal(x) {
+  return Math.abs(x) < 1.0e-20 ? 0 : x;
 }
 
 function fastSoftClip(x) {
@@ -281,9 +284,10 @@ class VibeEngine {
   }
 
   vibefilter(data, f) {
-    const y0 = data * f.n0 + f.x1 * f.n1 - f.y1 * f.d1;
-    f.y1 = y0 + DENORMAL_GUARD;
-    f.x1 = data;
+    const y0Raw = data * f.n0 + f.x1 * f.n1 - f.y1 * f.d1;
+    const y0 = zapDenormal(y0Raw);
+    f.y1 = y0;
+    f.x1 = zapDenormal(data);
     return y0;
   }
 
@@ -421,10 +425,10 @@ class VibeEngine {
           let cvolt = this.vibefilter(input, this.stage[j].ecvc) + this.vibefilter(input + emitterFbL * this.stage[j].oldcvolt, this.stage[j].vc);
           cvolt = clamp(cvolt, -stageLimit, stageLimit);
           const ocvolt = clamp(this.vibefilter(cvolt, this.stage[j].vcvo), -stageLimit, stageLimit);
-          this.stage[j].oldcvolt = ocvolt;
+          this.stage[j].oldcvolt = zapDenormal(ocvolt);
           input = this.bjtShape(ocvolt + this.vibefilter(input, this.stage[j].vevo), this.smoothedUser.input_drive);
         }
-        this.fbl = clamp(softClipCubic(this.stage[3].oldcvolt * feedbackMusicalGain(this.smoothedUser.feedback)), -0.95, 0.95);
+        this.fbl = zapDenormal(clamp(softClipCubic(this.stage[3].oldcvolt * feedbackMusicalGain(this.smoothedUser.feedback)), -0.95, 0.95));
         const wetL = this.toneTilt(input, this.smoothedUser.tone_tilt, "left");
         const compL = 1 - this.params.tuning.gain_comp_depth * clamp(this.smoothedUser.depth, 0, 1) * 0.35;
         leftOut[offset + i] = this.smoothedUser.output_gain * compL * (
@@ -440,10 +444,10 @@ class VibeEngine {
           let cvolt = this.vibefilter(input, this.stage[j].ecvc) + this.vibefilter(input + emitterFbR * this.stage[j].oldcvolt, this.stage[j].vc);
           cvolt = clamp(cvolt, -stageLimit, stageLimit);
           const ocvolt = clamp(this.vibefilter(cvolt, this.stage[j].vcvo), -stageLimit, stageLimit);
-          this.stage[j].oldcvolt = ocvolt;
+          this.stage[j].oldcvolt = zapDenormal(ocvolt);
           input = this.bjtShape(ocvolt + this.vibefilter(input, this.stage[j].vevo), this.smoothedUser.input_drive);
         }
-        this.fbr = clamp(softClipCubic(this.stage[7].oldcvolt * feedbackMusicalGain(this.smoothedUser.feedback)), -0.95, 0.95);
+        this.fbr = zapDenormal(clamp(softClipCubic(this.stage[7].oldcvolt * feedbackMusicalGain(this.smoothedUser.feedback)), -0.95, 0.95));
         const wetR = this.toneTilt(input, this.smoothedUser.tone_tilt, "right");
         const compR = 1 - this.params.tuning.gain_comp_depth * clamp(this.smoothedUser.depth, 0, 1) * 0.35;
         rightOut[offset + i] = this.smoothedUser.output_gain * compR * (
