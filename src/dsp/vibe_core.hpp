@@ -18,6 +18,31 @@
 
 #define AUDIO_SYS_CLOCK_HZ 135475200u
 
+// DSP diagnostic/mitigation toggles for time-varying IIR coefficient modulation.
+#ifndef VIBE_DIAG_FREEZE_MODULATION
+#define VIBE_DIAG_FREEZE_MODULATION 0
+#endif
+
+#ifndef VIBE_DIAG_DISABLE_FEEDBACK
+#define VIBE_DIAG_DISABLE_FEEDBACK 0
+#endif
+
+#ifndef VIBE_LIMIT_470PF_STAGE
+#define VIBE_LIMIT_470PF_STAGE 1
+#endif
+
+#ifndef VIBE_COEFF_UPDATE_PER_SAMPLE
+#define VIBE_COEFF_UPDATE_PER_SAMPLE 0
+#endif
+
+#ifndef VIBE_LDR_COEFF_SMOOTH_TAU_SEC
+#define VIBE_LDR_COEFF_SMOOTH_TAU_SEC 0.0015f
+#endif
+
+#ifndef VIBE_470PF_MAX_CORNER_HZ
+#define VIBE_470PF_MAX_CORNER_HZ 15000.0f
+#endif
+
 // Final output conditioning toggles (keep lightweight, easy to bypass if desired).
 #ifndef ENABLE_OUTPUT_DC_BLOCKER
 #define ENABLE_OUTPUT_DC_BLOCKER 1
@@ -603,6 +628,8 @@ private:
 
     float lamp_state_l = 0.0f, lamp_state_r = 0.0f;
     float lamp_attack, lamp_release;
+    float mod_res_l = 1000000.0f, mod_res_r = 1000000.0f;
+    float min_stage_res[8] = {0};
 
     PhaseStage stage[8];
 
@@ -635,6 +662,7 @@ private:
     float bjt_shape(float data, float drive);
     float hp_pre(float x, float hz, float &x1, float &y1);
     float feedback_profile_process(float x, FeedbackProfile profile, VibeProfile vibe_profile, FeedbackMidState &mid_state);
+    void set_filter_coefs(fparams &target, float n0, float n1, float d1);
     float tone_tilt_process(float x, float tilt, float &lp);
 };
 
@@ -936,6 +964,8 @@ void Vibe::reseed(uint32_t seed) {
     rng_seed = seed ? seed : 0x13579BDFu;
     lamp_state_l = 0.0f;
     lamp_state_r = 0.0f;
+    mod_res_l = params.tuning.ldr_dark_ohms;
+    mod_res_r = params.tuning.ldr_dark_ohms;
     fbl = 0.0f;
     fbr = 0.0f;
     fb_mid_l = {};
@@ -1109,6 +1139,9 @@ void Vibe::init_vibes() {
         0.015e-6f, 0.22e-6f, 470e-12f, 0.0047e-6f
     };
 
+    mod_res_l = clampf(mod_res_l, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
+    mod_res_r = clampf(mod_res_r, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
+
     uint32_t component_rng = rng_seed ^ 0x51F15EEDu;
     for (int i = 0; i < 8; i++) {
         const float mismatch_scale = (params.profile == VibeProfile::Modern) ? 0.75f : 1.15f;
@@ -1126,15 +1159,38 @@ void Vibe::init_vibes() {
         stage[i].vcvo = {};
         stage[i].ecvc = {};
         stage[i].vevo = {};
+#if VIBE_LIMIT_470PF_STAGE
+        if (C1[i] < 1.0e-9f) {
+            const float max_corner_hz = clampf(VIBE_470PF_MAX_CORNER_HZ, 6000.0f, 22000.0f);
+            const float min_total_r = 1.0f / (2.0f * kPi * max_corner_hz * C1[i]);
+            min_stage_res[i] = fmaxf(0.0f, min_total_r - 4700.0f);
+        } else {
+            min_stage_res[i] = 0.0f;
+        }
+#else
+        min_stage_res[i] = 0.0f;
+#endif
     }
+    modulate(mod_res_l, mod_res_r);
+}
+
+void Vibe::set_filter_coefs(fparams &target, float n0, float n1, float d1) {
+    target.n0 = clampf(n0, -8.0f, 8.0f);
+    target.n1 = clampf(n1, -8.0f, 8.0f);
+    // Keep the single-pole sections strictly inside the unit circle while coefficients move.
+    target.d1 = clampf(d1, -0.9995f, 0.9995f);
 }
 
 void Vibe::modulate(float res_l, float res_r) {
     for (int i = 0; i < 8; i++) {
         float base_res = (i < 4) ? res_l : res_r;
         // Clamp the stage LDR emulation after mismatch so the network never sees non-physical extremes.
+        float min_stage_res_val = params.tuning.ldr_min_ohms;
+#if VIBE_LIMIT_470PF_STAGE
+        min_stage_res_val = fmaxf(min_stage_res_val, min_stage_res[i]);
+#endif
         float stage_res = clampf(base_res * stage[i].ldr_mismatch,
-                                 params.tuning.ldr_min_ohms,
+                                 min_stage_res_val,
                                  params.tuning.ldr_max_ohms);
         float currentRv = 4700.0f + stage_res;
 
@@ -1156,25 +1212,17 @@ void Vibe::modulate(float res_l, float res_r) {
         float ecn0_val = 0.0f;
 
         float tmp = 1.0f / (cd1_val + cd0_val);
-        stage[i].vc.n1 = tmp * (cn0_val - cn1_val);
-        stage[i].vc.n0 = tmp * (cn1_val + cn0_val);
-        stage[i].vc.d1 = tmp * (cd0_val - cd1_val);
+        set_filter_coefs(stage[i].vc, tmp * (cn1_val + cn0_val), tmp * (cn0_val - cn1_val), tmp * (cd0_val - cd1_val));
 
         tmp = 1.0f / (ecd1_val + ecd0_val);
-        stage[i].ecvc.n1 = tmp * (ecn0_val - ecn1_val);
-        stage[i].ecvc.n0 = tmp * (ecn1_val + ecn0_val);
-        stage[i].ecvc.d1 = tmp * (ecd0_val - ecd1_val);
+        set_filter_coefs(stage[i].ecvc, tmp * (ecn1_val + ecn0_val), tmp * (ecn0_val - ecn1_val), tmp * (ecd0_val - ecd1_val));
 
         tmp = 1.0f / (on1_val + od0_val);
-        stage[i].vcvo.n1 = tmp * (on0_val - on1_val);
-        stage[i].vcvo.n0 = tmp * (on1_val + on0_val);
-        stage[i].vcvo.d1 = tmp * (od0_val - on1_val);
+        set_filter_coefs(stage[i].vcvo, tmp * (on1_val + on0_val), tmp * (on0_val - on1_val), tmp * (od0_val - on1_val));
 
         float ed1_val = k * R1pRv * C1[i];
         tmp = 1.0f / (ed1_val + ed0_val);
-        stage[i].vevo.n1 = tmp * (en0[i] - en1[i]);
-        stage[i].vevo.n0 = tmp * (en1[i] + en0[i]);
-        stage[i].vevo.d1 = tmp * (ed0_val - ed1_val);
+        set_filter_coefs(stage[i].vevo, tmp * (en1[i] + en0[i]), tmp * (en0[i] - en1[i]), tmp * (ed0_val - ed1_val));
     }
 }
 
@@ -1226,9 +1274,10 @@ void Vibe::out(float *smpsl, float *smpsr) {
     const float profile_stereo_reduction = classic_chorus_profile ? 0.88f : (classic_profile ? 0.93f : 1.06f);
     const float stereo_width = clampf(params.musical.stereo_width, 0.0f, 1.35f);
     const float classic_stereo_reduction = clampf(profile_stereo_reduction * stereo_width, 0.0f, 1.35f);
+#if !VIBE_DIAG_FREEZE_MODULATION
+    const float ldr_coeff_alpha = 1.0f - expf(-cSAMPLE_RATE / clampf(VIBE_LDR_COEFF_SMOOTH_TAU_SEC, 0.0005f, 0.005f));
+#endif
 
-    float mod_res_l = params.tuning.ldr_dark_ohms;
-    float mod_res_r = params.tuning.ldr_dark_ohms;
     float wet_comp_l_raw_state = 1.0f;
     float wet_comp_r_raw_state = 1.0f;
 
@@ -1278,16 +1327,31 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float bright_r = lamp_state_r * sqrtf(lamp_state_r);
         const float res_l = ldr_resistance_from_brightness(bright_l, params.tuning, ldr_curve_scale);
         const float res_r = ldr_resistance_from_brightness(bright_r, params.tuning, ldr_curve_scale);
+#if VIBE_DIAG_FREEZE_MODULATION
+        (void)res_l;
+        (void)res_r;
+#else
+        mod_res_l += ldr_coeff_alpha * (res_l - mod_res_l);
+        mod_res_r += ldr_coeff_alpha * (res_r - mod_res_r);
+        mod_res_l = clampf(mod_res_l, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
+        mod_res_r = clampf(mod_res_r, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
+#if VIBE_COEFF_UPDATE_PER_SAMPLE
+        modulate(mod_res_l, mod_res_r);
+#else
         if ((i & 0x3) == 0) {
-            mod_res_l = res_l;
-            mod_res_r = res_r;
             modulate(mod_res_l, mod_res_r);
         }
+#endif
+#endif
 
         const float emitterfb_l = clampf(params.tuning.emitter_fb_scale / mod_res_l, params.tuning.emitter_fb_min, params.tuning.emitter_fb_max);
         const float emitterfb_r = clampf(params.tuning.emitter_fb_scale / mod_res_r, params.tuning.emitter_fb_min, params.tuning.emitter_fb_max);
         const float feedback_knob = fb_ramp.tick();
+#if VIBE_DIAG_DISABLE_FEEDBACK
+        const float feedback = 0.0f;
+#else
         const float feedback = clampf(feedback_musical_gain(feedback_knob), 0.0f, 0.70f);
+#endif
         const float input_drive = drive_ramp.tick();
         const float mix = mix_ramp.tick();
         const float output_gain = gain_ramp.tick();
