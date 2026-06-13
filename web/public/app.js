@@ -147,6 +147,13 @@ function setButtons() {
   $("export").disabled = !st.outBuf;
 }
 
+function getWasmHeapF32() {
+  if (st.mod?.HEAPF32 instanceof Float32Array) return st.mod.HEAPF32;
+  throw new Error(
+    "Memória Float32 do WASM indisponível. Recompile com HEAPF32 exportado.",
+  );
+}
+
 async function play(buf) {
   const ctx = getAudioContext();
   if (ctx.state !== "running") await ctx.resume();
@@ -497,11 +504,12 @@ $("render").onclick = () => {
     ptrs.push(ol);
     const orr = st.mod._malloc(bytes);
     ptrs.push(orr);
-    st.mod.HEAPF32.set(l, pl >> 2);
-    st.mod.HEAPF32.set(r, pr >> 2);
+    getWasmHeapF32().set(l, pl >> 2);
+    getWasmHeapF32().set(r, pr >> 2);
     st.mod._vibe_process_stereo(st.h, pl, pr, ol, orr, n);
-    const outL = st.mod.HEAPF32.subarray(ol >> 2, (ol >> 2) + n).slice();
-    const outR = st.mod.HEAPF32.subarray(orr >> 2, (orr >> 2) + n).slice();
+    const heapF32 = getWasmHeapF32();
+    const outL = heapF32.subarray(ol >> 2, (ol >> 2) + n).slice();
+    const outR = heapF32.subarray(orr >> 2, (orr >> 2) + n).slice();
     const out = getAudioContext().createBuffer(2, n, TARGET_SAMPLE_RATE);
     out.copyToChannel(outL, 0);
     out.copyToChannel(outR, 1);
