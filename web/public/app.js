@@ -278,7 +278,7 @@ function drawBuffer(ctx, buf, y, height, width, color, label) {
     const step = channel.length / w;
     for (let x = 0; x < w; x += 1) {
       const start = Math.floor(x * step);
-      const end = Math.floor((x + 1) * step);
+      const end = Math.max(start + 1, Math.floor((x + 1) * step));
       let peak = 0;
       for (let i = start; i < end && i < channel.length; i += 1) {
         const val = Math.abs(channel[i]);
