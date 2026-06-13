@@ -425,7 +425,7 @@ class VibeEngine {
           let cvolt = this.vibefilter(input, this.stage[j].ecvc) + this.vibefilter(input + emitterFbL * this.stage[j].oldcvolt, this.stage[j].vc);
           cvolt = clamp(cvolt, -stageLimit, stageLimit);
           const ocvolt = clamp(this.vibefilter(cvolt, this.stage[j].vcvo), -stageLimit, stageLimit);
-          this.stage[j].oldcvolt = zapDenormal(ocvolt);
+          this.stage[j].oldcvolt = ocvolt;
           input = this.bjtShape(ocvolt + this.vibefilter(input, this.stage[j].vevo), this.smoothedUser.input_drive);
         }
         this.fbl = zapDenormal(clamp(softClipCubic(this.stage[3].oldcvolt * feedbackMusicalGain(this.smoothedUser.feedback)), -0.95, 0.95));
@@ -444,7 +444,7 @@ class VibeEngine {
           let cvolt = this.vibefilter(input, this.stage[j].ecvc) + this.vibefilter(input + emitterFbR * this.stage[j].oldcvolt, this.stage[j].vc);
           cvolt = clamp(cvolt, -stageLimit, stageLimit);
           const ocvolt = clamp(this.vibefilter(cvolt, this.stage[j].vcvo), -stageLimit, stageLimit);
-          this.stage[j].oldcvolt = zapDenormal(ocvolt);
+          this.stage[j].oldcvolt = ocvolt;
           input = this.bjtShape(ocvolt + this.vibefilter(input, this.stage[j].vevo), this.smoothedUser.input_drive);
         }
         this.fbr = zapDenormal(clamp(softClipCubic(this.stage[7].oldcvolt * feedbackMusicalGain(this.smoothedUser.feedback)), -0.95, 0.95));

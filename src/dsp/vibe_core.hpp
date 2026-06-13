@@ -1335,8 +1335,8 @@ void Vibe::out(float *smpsl, float *smpsr) {
         (void)res_l;
         (void)res_r;
 #else
-        mod_res_l = zap_denormal(mod_res_l + ldr_coeff_alpha * (res_l - mod_res_l));
-        mod_res_r = zap_denormal(mod_res_r + ldr_coeff_alpha * (res_r - mod_res_r));
+        mod_res_l += ldr_coeff_alpha * (res_l - mod_res_l);
+        mod_res_r += ldr_coeff_alpha * (res_r - mod_res_r);
         mod_res_l = clampf(mod_res_l, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
         mod_res_r = clampf(mod_res_r, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
 #if VIBE_COEFF_UPDATE_PER_SAMPLE
@@ -1392,7 +1392,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
                           vibefilter(input + emitterfb_l * stage[j].oldcvolt, &stage[j].vc);
             cvolt = clampf(cvolt, -stage_limit, stage_limit);
             float ocvolt = clampf(vibefilter(cvolt, &stage[j].vcvo), -stage_limit, stage_limit);
-            stage[j].oldcvolt = zap_denormal(ocvolt);
+            stage[j].oldcvolt = ocvolt;
             input = bjt_shape(ocvolt + vibefilter(input, &stage[j].vevo), dynamic_drive_l);
         }
 
@@ -1423,7 +1423,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
                           vibefilter(input + emitterfb_r * stage[j].oldcvolt, &stage[j].vc);
             cvolt = clampf(cvolt, -stage_limit, stage_limit);
             float ocvolt = clampf(vibefilter(cvolt, &stage[j].vcvo), -stage_limit, stage_limit);
-            stage[j].oldcvolt = zap_denormal(ocvolt);
+            stage[j].oldcvolt = ocvolt;
             input = bjt_shape(ocvolt + vibefilter(input, &stage[j].vevo), dynamic_drive_r);
         }
 
