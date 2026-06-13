@@ -32,7 +32,7 @@
 #endif
 
 #ifndef VIBE_COEFF_UPDATE_PER_SAMPLE
-#define VIBE_COEFF_UPDATE_PER_SAMPLE 1
+#define VIBE_COEFF_UPDATE_PER_SAMPLE 0
 #endif
 
 #ifndef VIBE_LDR_COEFF_SMOOTH_TAU_SEC
@@ -629,6 +629,7 @@ private:
     float lamp_state_l = 0.0f, lamp_state_r = 0.0f;
     float lamp_attack, lamp_release;
     float mod_res_l = 1000000.0f, mod_res_r = 1000000.0f;
+    float min_stage_res[8] = {0};
 
     PhaseStage stage[8];
 
@@ -661,7 +662,7 @@ private:
     float bjt_shape(float data, float drive);
     float hp_pre(float x, float hz, float &x1, float &y1);
     float feedback_profile_process(float x, FeedbackProfile profile, VibeProfile vibe_profile, FeedbackMidState &mid_state);
-    bool set_filter_coefs(fparams &target, float n0, float n1, float d1);
+    void set_filter_coefs(fparams &target, float n0, float n1, float d1);
     float tone_tilt_process(float x, float tilt, float &lp);
 };
 
@@ -1158,34 +1159,38 @@ void Vibe::init_vibes() {
         stage[i].vcvo = {};
         stage[i].ecvc = {};
         stage[i].vevo = {};
+#if VIBE_LIMIT_470PF_STAGE
+        if (C1[i] < 1.0e-9f) {
+            const float max_corner_hz = clampf(VIBE_470PF_MAX_CORNER_HZ, 6000.0f, 22000.0f);
+            const float min_total_r = 1.0f / (2.0f * kPi * max_corner_hz * C1[i]);
+            min_stage_res[i] = fmaxf(0.0f, min_total_r - 4700.0f);
+        } else {
+            min_stage_res[i] = 0.0f;
+        }
+#else
+        min_stage_res[i] = 0.0f;
+#endif
     }
     modulate(mod_res_l, mod_res_r);
 }
 
-bool Vibe::set_filter_coefs(fparams &target, float n0, float n1, float d1) {
-    if (!std::isfinite(n0) || !std::isfinite(n1) || !std::isfinite(d1)) {
-        return false;
-    }
+void Vibe::set_filter_coefs(fparams &target, float n0, float n1, float d1) {
     target.n0 = clampf(n0, -8.0f, 8.0f);
     target.n1 = clampf(n1, -8.0f, 8.0f);
     // Keep the single-pole sections strictly inside the unit circle while coefficients move.
     target.d1 = clampf(d1, -0.9995f, 0.9995f);
-    return true;
 }
 
 void Vibe::modulate(float res_l, float res_r) {
     for (int i = 0; i < 8; i++) {
         float base_res = (i < 4) ? res_l : res_r;
         // Clamp the stage LDR emulation after mismatch so the network never sees non-physical extremes.
-        float min_stage_res = params.tuning.ldr_min_ohms;
+        float min_stage_res_val = params.tuning.ldr_min_ohms;
 #if VIBE_LIMIT_470PF_STAGE
-        if (C1[i] < 1.0e-9f) {
-            const float min_total_r = 1.0f / (2.0f * kPi * clampf(VIBE_470PF_MAX_CORNER_HZ, 6000.0f, 22000.0f) * C1[i]);
-            min_stage_res = fmaxf(min_stage_res, min_total_r - 4700.0f);
-        }
+        min_stage_res_val = fmaxf(min_stage_res_val, min_stage_res[i]);
 #endif
         float stage_res = clampf(base_res * stage[i].ldr_mismatch,
-                                 min_stage_res,
+                                 min_stage_res_val,
                                  params.tuning.ldr_max_ohms);
         float currentRv = 4700.0f + stage_res;
 
