@@ -134,10 +134,9 @@ function clamp(value, min, max) {
 
 function formatTime(seconds) {
   if (!Number.isFinite(seconds)) return "—";
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.round(seconds % 60)
-    .toString()
-    .padStart(2, "0");
+  const total = Math.round(seconds);
+  const mins = Math.floor(total / 60);
+  const secs = (total % 60).toString().padStart(2, "0");
   return `${mins}:${secs}`;
 }
 
@@ -272,19 +271,30 @@ function encodeWav(l, r, sr) {
 }
 
 function drawBuffer(ctx, buf, y, height, width, color, label) {
-  const channel = buf.getChannelData(0);
-  const w = width;
+  const w = Math.max(1, Math.floor(width));
+  if (!buf._peaks || buf._peaks.length !== w) {
+    const channel = buf.getChannelData(0);
+    const peaks = new Float32Array(w);
+    const step = channel.length / w;
+    for (let x = 0; x < w; x += 1) {
+      const start = Math.floor(x * step);
+      const end = Math.floor((x + 1) * step);
+      let peak = 0;
+      for (let i = start; i < end && i < channel.length; i += 1) {
+        const val = Math.abs(channel[i]);
+        if (val > peak) peak = val;
+      }
+      peaks[x] = peak;
+    }
+    buf._peaks = peaks;
+  }
   const mid = y + height / 2;
   const amp = height * 0.42;
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
   ctx.beginPath();
   for (let x = 0; x < w; x += 1) {
-    const start = Math.floor((x / w) * channel.length);
-    const end = Math.floor(((x + 1) / w) * channel.length);
-    let peak = 0;
-    for (let i = start; i <= end && i < channel.length; i += 1)
-      peak = Math.max(peak, Math.abs(channel[i]));
+    const peak = buf._peaks[x];
     const top = mid - peak * amp;
     const bottom = mid + peak * amp;
     ctx.moveTo(x, top);
