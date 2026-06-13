@@ -1,6 +1,7 @@
 #include "processor.hpp"
 
 #include <cmath>
+#include <cstdlib>
 #include <cstdint>
 #include <iostream>
 #include <stdexcept>
@@ -41,23 +42,28 @@ void require_silent(const char* label, const ChannelMetrics& m) {
 }  // namespace
 
 int main() {
-    constexpr uint32_t kSampleRate = 44100u;
-    constexpr uint32_t kSeconds = 20u;
-    constexpr size_t kFrames = static_cast<size_t>(kSampleRate) * kSeconds;
+    try {
+        constexpr uint32_t kSampleRate = 44100u;
+        constexpr uint32_t kSeconds = 20u;
+        constexpr size_t kFrames = static_cast<size_t>(kSampleRate) * kSeconds;
 
-    std::vector<float> left(kFrames, 0.0f);
-    std::vector<float> right(kFrames, 0.0f);
+        std::vector<float> left(kFrames, 0.0f);
+        std::vector<float> right(kFrames, 0.0f);
 
-    UnivibeParams params;
-    params.engine_mode = UnivibeParams::EngineMode::improved;
-    params.preset = UnivibeParams::Preset::classic_chorus;
-    params.mode_chorus = true;
-    params.seed = 1;
+        UnivibeParams params;
+        params.engine_mode = UnivibeParams::EngineMode::improved;
+        params.preset = UnivibeParams::Preset::classic_chorus;
+        params.mode_chorus = true;
+        params.seed = 1;
 
-    DesktopUnivibeProcessor processor(params);
-    processor.process_in_place(left, right);
+        DesktopUnivibeProcessor processor(params);
+        processor.process_in_place(left, right);
 
-    require_silent("L", measure(left));
-    require_silent("R", measure(right));
-    return 0;
+        require_silent("L", measure(left));
+        require_silent("R", measure(right));
+    } catch (const std::exception& e) {
+        std::cerr << "silence_test failed: " << e.what() << "\n";
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
 }

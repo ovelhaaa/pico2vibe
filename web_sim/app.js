@@ -305,8 +305,8 @@ class VibeEngine {
     const h = clamp(hz, 8, 160);
     const a = Math.exp(-2 * PI * h * INV_SAMPLE_RATE);
     const y = a * (state.y1 + data - state.x1);
-    state.x1 = data;
-    state.y1 = y;
+    state.x1 = zapDenormal(data);
+    state.y1 = zapDenormal(y);
     return y;
   }
 
@@ -315,11 +315,11 @@ class VibeEngine {
     const alpha = 1 - Math.exp(-2 * PI * fc * INV_SAMPLE_RATE);
     const amt = clamp(tilt, -1, 1);
     if (channel === "left") {
-      this.toneLpL += alpha * (data - this.toneLpL);
+      this.toneLpL = zapDenormal(this.toneLpL + alpha * (data - this.toneLpL));
       const high = data - this.toneLpL;
       return data + amt * (0.85 * high - 0.65 * this.toneLpL);
     }
-    this.toneLpR += alpha * (data - this.toneLpR);
+    this.toneLpR = zapDenormal(this.toneLpR + alpha * (data - this.toneLpR));
     const high = data - this.toneLpR;
     return data + amt * (0.85 * high - 0.65 * this.toneLpR);
   }
