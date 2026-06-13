@@ -629,6 +629,7 @@ private:
     float lamp_state_l = 0.0f, lamp_state_r = 0.0f;
     float lamp_attack, lamp_release;
     float mod_res_l = 1000000.0f, mod_res_r = 1000000.0f;
+    float mod_ldr_max_ohms = 1000000.0f;
     float min_stage_res[8] = {0};
 
     PhaseStage stage[8];
@@ -1142,8 +1143,10 @@ void Vibe::init_vibes() {
         0.015e-6f, 0.22e-6f, 470e-12f, 0.0047e-6f
     };
 
-    mod_res_l = clampf(mod_res_l, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
-    mod_res_r = clampf(mod_res_r, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
+    mod_ldr_max_ohms = fmaxf(params.tuning.ldr_max_ohms, 0.0f);
+    const float ldr_min_ohms = clampf(params.tuning.ldr_min_ohms, 0.0f, mod_ldr_max_ohms);
+    mod_res_l = clampf(mod_res_l, ldr_min_ohms, mod_ldr_max_ohms);
+    mod_res_r = clampf(mod_res_r, ldr_min_ohms, mod_ldr_max_ohms);
 
     uint32_t component_rng = rng_seed ^ 0x51F15EEDu;
     for (int i = 0; i < 8; i++) {
@@ -1162,17 +1165,16 @@ void Vibe::init_vibes() {
         stage[i].vcvo = {};
         stage[i].ecvc = {};
         stage[i].vevo = {};
+        float min_res = ldr_min_ohms;
 #if VIBE_LIMIT_470PF_STAGE
         if (C1[i] < 1.0e-9f) {
             const float max_corner_hz = clampf(VIBE_470PF_MAX_CORNER_HZ, 6000.0f, 22000.0f);
             const float min_total_r = 1.0f / (2.0f * kPi * max_corner_hz * C1[i]);
-            min_stage_res[i] = fmaxf(0.0f, min_total_r - 4700.0f);
-        } else {
-            min_stage_res[i] = 0.0f;
+            min_res = fmaxf(min_res, min_total_r - 4700.0f);
         }
-#else
-        min_stage_res[i] = 0.0f;
 #endif
+        // Normalize the precomputed lower bound so clampf() always receives an ordered range.
+        min_stage_res[i] = clampf(min_res, ldr_min_ohms, mod_ldr_max_ohms);
     }
     modulate(mod_res_l, mod_res_r);
 }
@@ -1188,13 +1190,9 @@ void Vibe::modulate(float res_l, float res_r) {
     for (int i = 0; i < 8; i++) {
         float base_res = (i < 4) ? res_l : res_r;
         // Clamp the stage LDR emulation after mismatch so the network never sees non-physical extremes.
-        float min_stage_res_val = params.tuning.ldr_min_ohms;
-#if VIBE_LIMIT_470PF_STAGE
-        min_stage_res_val = fmaxf(min_stage_res_val, min_stage_res[i]);
-#endif
         float stage_res = clampf(base_res * stage[i].ldr_mismatch,
-                                 min_stage_res_val,
-                                 params.tuning.ldr_max_ohms);
+                                 min_stage_res[i],
+                                 mod_ldr_max_ohms);
         float currentRv = 4700.0f + stage_res;
 
         float R1pRv = R1 + currentRv;
