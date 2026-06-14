@@ -1295,6 +1295,8 @@ void Vibe::out(float *smpsl, float *smpsr) {
 #if !VIBE_DIAG_FREEZE_MODULATION
     const float ldr_coeff_alpha = 1.0f - expf(-cSAMPLE_RATE / clampf(VIBE_LDR_COEFF_SMOOTH_TAU_SEC, 0.0005f, 0.005f));
 #endif
+    const float wet_smooth_hz = (params.profile == VibeProfile::Modern) ? 7200.0f : 5400.0f;
+    const float wet_smooth_coeff = 1.0f - expf(-2.0f * kPi * wet_smooth_hz * cSAMPLE_RATE);
 
     float wet_comp_l_raw_state = 1.0f;
     float wet_comp_r_raw_state = 1.0f;
@@ -1390,8 +1392,6 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float bulb_fb_drive = 1.0f + 0.8f * lamp_hot + 0.4f * feedback;
         const float fb_sat_drive = clampf((1.0f + params.tuning.feedback_sat) * bulb_fb_drive * (1.0f - 0.30f * clarity_boost), 0.75f, 2.80f);
         const float wet_core_blend = 0.14f * clarity_boost;
-        const float wet_smooth_hz = (params.profile == VibeProfile::Modern) ? 7200.0f : 5400.0f;
-        const float wet_smooth_coeff = 1.0f - expf(-2.0f * kPi * wet_smooth_hz * cSAMPLE_RATE);
         // Adaptive drive base follows input drive; other coefficients are block constants.
         const float dyn_base = clampf(0.80f + 0.34f * input_drive, 0.80f, 2.20f);
 
