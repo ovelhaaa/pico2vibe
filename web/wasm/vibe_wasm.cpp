@@ -50,7 +50,9 @@ float vibe_get_param_min(uint32_t id) { return vibe_param_spec(static_cast<VibeP
 float vibe_get_param_max(uint32_t id) { return vibe_param_spec(static_cast<VibeParamId>(id)).max_value; }
 float vibe_get_param_default(uint32_t id) { return vibe_param_spec(static_cast<VibeParamId>(id)).default_value; }
 float vibe_get_param(VibeHandle* h, uint32_t id) { return h->engine.get_param(static_cast<VibeParamId>(id)); }
+float vibe_get_param_normalized(VibeHandle* h, uint32_t id) { return h->engine.get_param_normalized(static_cast<VibeParamId>(id)); }
 void vibe_set_param(VibeHandle* h, uint32_t id, float v) { h->engine.set_param(static_cast<VibeParamId>(id), v); }
+void vibe_set_param_normalized(VibeHandle* h, uint32_t id, float v) { h->engine.set_param_normalized(static_cast<VibeParamId>(id), v); }
 
 uint32_t vibe_get_voicing_count() { return 4u; }
 const char* vibe_get_voicing_name(uint32_t id) {
