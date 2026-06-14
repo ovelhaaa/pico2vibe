@@ -147,8 +147,8 @@ struct VibeUserParams {
     float drift_rate_hz = 0.08f;
     float pre_hpf_hz = 22.0f;
     float tone_tilt = 0.0f;
-    float sat_asymmetry = 0.08f;
-    float sat_out_trim = 0.95f;
+    float sat_asymmetry = 0.04f;
+    float sat_out_trim = 0.82f;
 };
 
 // Physical optical/circuit model parameters: LDR/lamp inertia, phase cells, mismatch and transistor trim.
@@ -317,9 +317,9 @@ struct VibeParamSpec {
 static inline VibeParamSpec vibe_param_spec(VibeParamId id) {
     switch (id) {
         case VibeParamId::Depth:      return {0.0f, 1.0f, 0.85f};
-        case VibeParamId::Feedback:   return {0.0f, 0.65f, 0.42f};
+        case VibeParamId::Feedback:   return {0.0f, 0.65f, 0.30f};
         case VibeParamId::Mix:        return {0.0f, 1.0f, 0.50f};
-        case VibeParamId::InputDrive: return {0.5f, 6.0f, 2.3f};
+        case VibeParamId::InputDrive: return {0.5f, 6.0f, 1.65f};
         case VibeParamId::OutputGain: return {0.25f, 2.0f, 1.0f};
         case VibeParamId::SweepMin:   return {0.0f, 1.0f, 0.58f};
         case VibeParamId::SweepMax:   return {0.0f, 1.0f, 0.98f};
@@ -328,8 +328,8 @@ static inline VibeParamSpec vibe_param_spec(VibeParamId id) {
         case VibeParamId::DriftRateHz:return {0.005f, 0.5f, 0.08f};
         case VibeParamId::PreHpfHz:   return {8.0f, 160.0f, 22.0f};
         case VibeParamId::ToneTilt:   return {-1.0f, 1.0f, 0.0f};
-        case VibeParamId::SatAsymmetry:return {-0.25f, 0.25f, 0.08f};
-        case VibeParamId::SatOutTrim: return {0.60f, 1.20f, 0.95f};
+        case VibeParamId::SatAsymmetry:return {-0.25f, 0.25f, 0.04f};
+        case VibeParamId::SatOutTrim: return {0.60f, 1.20f, 0.82f};
         default:                      return {0.0f, 1.0f, 0.0f};
     }
 }
@@ -476,7 +476,10 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.chorus_mode = true;
             preset.user.mix = 0.48f;
             preset.user.depth = 0.78f;
-            preset.user.feedback = 0.34f;
+            preset.user.feedback = 0.24f;
+            preset.user.input_drive = 1.35f;
+            preset.user.sat_asymmetry = 0.02f;
+            preset.user.sat_out_trim = 0.78f;
             preset.user.lfo_rate_hz = 0.85f;
             preset.user.tone_tilt = 0.0f;
             preset.musical.auto_level_amount = 0.35f;
@@ -653,6 +656,7 @@ private:
     float input_env_l = 0.0f, input_env_r = 0.0f;
     float wet_env_l = 0.0f, wet_env_r = 0.0f;
     float tone_lp_l = 0.0f, tone_lp_r = 0.0f;
+    float wet_smooth_l = 0.0f, wet_smooth_r = 0.0f;
     float lamp_memory_l = 0.0f, lamp_memory_r = 0.0f;
     float stage_lamp_slew[8] = {0};
     ParamRamp depth_ramp, fb_ramp, mix_ramp, drive_ramp, gain_ramp, sweep_min_ramp, sweep_max_ramp;
@@ -667,6 +671,7 @@ private:
     float feedback_profile_process(float x, FeedbackProfile profile, VibeProfile vibe_profile, FeedbackMidState &mid_state);
     void set_filter_coefs(fparams &target, float n0, float n1, float d1);
     float tone_tilt_process(float x, float tilt, float &lp);
+    float wet_antialias_process(float x, float coeff, float &state);
 };
 
 #if USER_INTERFACE
@@ -978,6 +983,10 @@ void Vibe::reseed(uint32_t seed) {
     fb_env_r = 0.0f;
     input_env_l = 0.0f;
     input_env_r = 0.0f;
+    wet_smooth_l = 0.0f;
+    wet_smooth_r = 0.0f;
+    tone_lp_l = 0.0f;
+    tone_lp_r = 0.0f;
     sanitize_user_params(&params.user);
     smoothed_user = params.user;
     lfo.reseed(rng_seed ^ 0xA511E9B3u);
@@ -1120,6 +1129,11 @@ float Vibe::feedback_profile_process(float x, FeedbackProfile profile, VibeProfi
         return clampf(shaped + mid_grit, -1.25f, 1.25f);
     }
     return clampf(shaped, -1.25f, 1.25f);
+}
+
+float Vibe::wet_antialias_process(float x, float coeff, float &state) {
+    state = zap_denormal(state + coeff * (x - state));
+    return state;
 }
 
 float Vibe::tone_tilt_process(float x, float tilt, float &lp) {
@@ -1375,7 +1389,9 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float lamp_hot = 0.5f * (lamp_state_l + lamp_state_r);
         const float bulb_fb_drive = 1.0f + 0.8f * lamp_hot + 0.4f * feedback;
         const float fb_sat_drive = clampf((1.0f + params.tuning.feedback_sat) * bulb_fb_drive * (1.0f - 0.30f * clarity_boost), 0.75f, 2.80f);
-        const float wet_core_blend = 0.24f * clarity_boost;
+        const float wet_core_blend = 0.14f * clarity_boost;
+        const float wet_smooth_hz = (params.profile == VibeProfile::Modern) ? 7200.0f : 5400.0f;
+        const float wet_smooth_coeff = 1.0f - expf(-2.0f * kPi * wet_smooth_hz * cSAMPLE_RATE);
         // Adaptive drive base follows input drive; other coefficients are block constants.
         const float dyn_base = clampf(0.80f + 0.34f * input_drive, 0.80f, 2.20f);
 
@@ -1409,6 +1425,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float wet_core_l = input;
         const float wet_air_l = tone_tilt_process(input, tone_tilt, tone_lp_l);
         float wet_l = wet_air_l + wet_core_blend * wet_core_l;
+        wet_l = wet_antialias_process(wet_l, wet_smooth_coeff, wet_smooth_l);
 
         float dry_r = smpsr[i];
         dry_r = hp_pre(dry_r, pre_hpf_hz, pre_hpf_x1_r, pre_hpf_y1_r);
@@ -1440,6 +1457,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float wet_core_r = input;
         const float wet_air_r = tone_tilt_process(input, tone_tilt, tone_lp_r);
         float wet_r = wet_air_r + wet_core_blend * wet_core_r;
+        wet_r = wet_antialias_process(wet_r, wet_smooth_coeff, wet_smooth_r);
 
         // Light stereo narrowing for classic chorus voicing to keep the image closer to vintage behavior.
         const float wet_mid = 0.5f * (wet_l + wet_r);
