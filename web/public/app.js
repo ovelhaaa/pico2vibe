@@ -128,6 +128,28 @@ function stepForRange(min, max) {
   return Math.max((max - min) / 400, 0.0001);
 }
 
+function stepForParam(param) {
+  return param.usesNormalizedSlider ? 0.001 : stepForRange(param.min, param.max);
+}
+
+function sliderMinForParam(param) {
+  return param.usesNormalizedSlider ? 0 : param.min;
+}
+
+function sliderMaxForParam(param) {
+  return param.usesNormalizedSlider ? 1 : param.max;
+}
+
+function sliderValueForParam(param) {
+  return param.usesNormalizedSlider ? param.normDef : param.def;
+}
+
+function formatParamValue(name, value) {
+  if (name === "lfo_rate_hz") return `${value.toFixed(2)} Hz`;
+  if (name === "pre_hpf_hz") return `${value.toFixed(1)} Hz`;
+  return value.toFixed(3);
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -205,8 +227,8 @@ async function resampleToTarget(buf) {
 function syncControlsFromEngine() {
   for (const ctl of st.controls) {
     const v = st.mod._vibe_get_param(st.h, ctl.id);
-    ctl.input.value = String(v);
-    ctl.txt.textContent = v.toFixed(3);
+    ctl.input.value = String(ctl.usesNormalizedSlider ? st.mod._vibe_get_param_normalized(st.h, ctl.id) : v);
+    ctl.txt.textContent = formatParamValue(ctl.name, v);
   }
 }
 
@@ -354,14 +376,19 @@ function makeParamControl(param, group) {
   wrap.style.setProperty("--accent", group.accent);
   wrap.innerHTML = `
     <label>${labelFromParamName(param.name)}<small>${helpFromParamName(param.name)}</small></label>
-    <input type="range" min="${param.min}" max="${param.max}" step="${stepForRange(param.min, param.max)}" value="${param.def}">
-    <div class="value">${param.def.toFixed(3)}</div>`;
+    <input type="range" min="${sliderMinForParam(param)}" max="${sliderMaxForParam(param)}" step="${stepForParam(param)}" value="${sliderValueForParam(param)}">
+    <div class="value">${formatParamValue(param.name, param.def)}</div>`;
   const input = wrap.querySelector("input");
   const txt = wrap.querySelector(".value");
   input.oninput = () => {
-    const v = parseFloat(input.value);
-    txt.textContent = v.toFixed(3);
-    st.mod._vibe_set_param(st.h, param.id, v);
+    const sliderValue = parseFloat(input.value);
+    if (param.usesNormalizedSlider) {
+      st.mod._vibe_set_param_normalized(st.h, param.id, sliderValue);
+    } else {
+      st.mod._vibe_set_param(st.h, param.id, sliderValue);
+    }
+    const v = st.mod._vibe_get_param(st.h, param.id);
+    txt.textContent = formatParamValue(param.name, v);
     st.outBuf = null;
     drawScope();
     setButtons();
@@ -373,6 +400,7 @@ function makeParamControl(param, group) {
     max: param.max,
     input,
     txt,
+    usesNormalizedSlider: param.usesNormalizedSlider,
   };
   st.controls.push(ctl);
   st.paramByName.set(param.name, ctl);
@@ -422,6 +450,8 @@ async function boot() {
       min: st.mod._vibe_get_param_min(i),
       max: st.mod._vibe_get_param_max(i),
       def: st.mod._vibe_get_param_default(i),
+      normDef: st.mod._vibe_get_param_normalized(st.h, i),
+      usesNormalizedSlider: st.mod.UTF8ToString(st.mod._vibe_get_param_name(i)) === "lfo_rate_hz",
     });
   }
   renderParamGroups(paramSpecs);
