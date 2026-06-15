@@ -31,7 +31,7 @@
 #endif
 
 #ifndef VIBE_COEFF_UPDATE_PER_SAMPLE
-#define VIBE_COEFF_UPDATE_PER_SAMPLE 0
+#define VIBE_COEFF_UPDATE_PER_SAMPLE 1
 #endif
 
 #ifndef VIBE_LDR_COEFF_SMOOTH_TAU_SEC
@@ -474,12 +474,12 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
         default:
             preset.profile = VibeProfile::Classic;
             preset.chorus_mode = true;
-            preset.user.mix = 0.48f;
-            preset.user.depth = 0.78f;
-            preset.user.feedback = 0.24f;
-            preset.user.input_drive = 1.35f;
-            preset.user.sat_asymmetry = 0.02f;
-            preset.user.sat_out_trim = 0.78f;
+            preset.user.mix = 0.52f;
+            preset.user.depth = 0.86f;
+            preset.user.feedback = 0.18f;
+            preset.user.input_drive = 1.55f;
+            preset.user.sat_asymmetry = 0.035f;
+            preset.user.sat_out_trim = 0.96f;
             preset.user.lfo_rate_hz = 0.85f;
             preset.user.tone_tilt = 0.0f;
             preset.musical.auto_level_amount = 0.35f;
@@ -595,6 +595,23 @@ struct FeedbackMidState {
     float lp_y1 = 0.0f;
 };
 
+struct Allpass1 {
+    float z = 0.0f;
+
+    float process(float x, float a) {
+        a = clampf(a, -0.995f, 0.995f);
+        const float y = -a * x + z;
+        z = zap_denormal(x + a * y);
+        return zap_denormal(y);
+    }
+};
+
+static inline float allpass_coef_from_fc(float fc) {
+    fc = clampf(fc, 20.0f, 12000.0f);
+    const float t = tanf(kPi * fc * cSAMPLE_RATE);
+    return clampf((1.0f - t) / (1.0f + t), -0.995f, 0.995f);
+}
+
 // ============================================================================
 // Univibe
 // ============================================================================
@@ -638,6 +655,9 @@ private:
     float min_stage_res[8] = {0};
 
     PhaseStage stage[8];
+    Allpass1 ap_stage[8];
+    float ap_a[8] = {0};
+    float ap_a_target[8] = {0};
 
     float fbr = 0.0f, fbl = 0.0f;
     float gain_bjt = 0.0f, k = 0.0f, R1 = 0.0f, C2 = 0.0f, C1[8] = {0}, beta = 0.0f;
@@ -667,6 +687,7 @@ private:
     void update_time_constants();
     void update_smoothed_user_params();
     float bjt_shape(float data, float drive);
+    float allpass_phase_network_process(float x, int first_stage);
     float hp_pre(float x, float hz, float &x1, float &y1);
     float feedback_profile_process(float x, FeedbackProfile profile, VibeProfile vibe_profile, FeedbackMidState &mid_state);
     void set_filter_coefs(fparams &target, float n0, float n1, float d1);
@@ -1177,6 +1198,9 @@ void Vibe::init_vibes() {
         stage[i].vcvo = {};
         stage[i].ecvc = {};
         stage[i].vevo = {};
+        ap_stage[i] = {};
+        ap_a[i] = 0.0f;
+        ap_a_target[i] = 0.0f;
 #if VIBE_LIMIT_470PF_STAGE
         if (C1[i] < 1.0e-9f) {
             const float max_corner_hz = clampf(VIBE_470PF_MAX_CORNER_HZ, 6000.0f, 22000.0f);
@@ -1211,6 +1235,8 @@ void Vibe::modulate(float res_l, float res_r) {
                                  min_stage_res_val,
                                  params.tuning.ldr_max_ohms);
         float currentRv = 4700.0f + stage_res;
+        const float fc = 1.0f / (2.0f * kPi * currentRv * C1[i]);
+        ap_a_target[i] = allpass_coef_from_fc(fc);
 
         float R1pRv = R1 + currentRv;
         float C2pC1 = C2 + C1[i];
@@ -1242,6 +1268,19 @@ void Vibe::modulate(float res_l, float res_r) {
         tmp = 1.0f / (ed1_val + ed0_val);
         set_filter_coefs(stage[i].vevo, tmp * (en1[i] + en0[i]), tmp * (en0[i] - en1[i]), tmp * (ed0_val - ed1_val));
     }
+}
+
+
+float Vibe::allpass_phase_network_process(float x, int first_stage) {
+    float y = x;
+    const int end = first_stage + 4;
+    const float coeff_slew = 1.0f - expf(-cSAMPLE_RATE / clampf(VIBE_LDR_COEFF_SMOOTH_TAU_SEC, 0.0005f, 0.005f));
+    for (int j = first_stage; j < end; ++j) {
+        ap_a[j] += coeff_slew * (ap_a_target[j] - ap_a[j]);
+        ap_a[j] = clampf(ap_a[j], -0.995f, 0.995f);
+        y = ap_stage[j].process(y, ap_a[j]);
+    }
+    return y;
 }
 
 void Vibe::out(float *smpsl, float *smpsr) {
@@ -1364,8 +1403,6 @@ void Vibe::out(float *smpsl, float *smpsr) {
 #endif
 #endif
 
-        const float emitterfb_l = clampf(params.tuning.emitter_fb_scale / mod_res_l, params.tuning.emitter_fb_min, params.tuning.emitter_fb_max);
-        const float emitterfb_r = clampf(params.tuning.emitter_fb_scale / mod_res_r, params.tuning.emitter_fb_min, params.tuning.emitter_fb_max);
         const float feedback_knob = fb_ramp.tick();
 #if VIBE_DIAG_DISABLE_FEEDBACK
         const float feedback = 0.0f;
@@ -1401,18 +1438,11 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float in_probe_l = fabsf(fb_in_l + dry_l);
         input_env_l += ((in_probe_l > input_env_l) ? input_env_attack : input_env_release) * (in_probe_l - input_env_l);
         const float dynamic_drive_l = clampf(dyn_base + dyn_k1 * input_env_l + dyn_k2 * feedback + dyn_k3 * depth, dyn_min, dyn_max);
-        float input = bjt_shape(fb_in_l + dry_l, dynamic_drive_l);
+        const float driven_l = bjt_shape(fb_in_l + dry_l, dynamic_drive_l);
+        const float wet_ap_l = allpass_phase_network_process(driven_l, 0);
+        stage[3].oldcvolt = clampf(wet_ap_l, -stage_limit, stage_limit);
 
-        for (int j = 0; j < 4; j++) {
-            float cvolt = vibefilter(input, &stage[j].ecvc) +
-                          vibefilter(input + emitterfb_l * stage[j].oldcvolt, &stage[j].vc);
-            cvolt = clampf(cvolt, -stage_limit, stage_limit);
-            float ocvolt = clampf(vibefilter(cvolt, &stage[j].vcvo), -stage_limit, stage_limit);
-            stage[j].oldcvolt = ocvolt;
-            input = bjt_shape(ocvolt + vibefilter(input, &stage[j].vevo), dynamic_drive_l);
-        }
-
-        float fb_raw_l = clampf(stage[3].oldcvolt * feedback, -1.20f, 1.20f);
+        float fb_raw_l = clampf(wet_ap_l * feedback, -1.20f, 1.20f);
         float fb_sat_l = soft_clip_cubic(fb_raw_l * fb_sat_drive);
         fb_sat_l = clampf(fb_sat_l, -1.15f, 1.15f);
         const float fb_abs_l = fabsf(fb_sat_l);
@@ -1422,8 +1452,11 @@ void Vibe::out(float *smpsl, float *smpsr) {
                                 : 1.0f;
         // Invariant: feedback state is bounded to keep stereo lanes numerically stable.
         fbl = zap_denormal(clampf(fb_sat_l * fb_gain_l, -0.95f, 0.95f));
-        const float wet_core_l = input;
-        const float wet_air_l = tone_tilt_process(input, tone_tilt, tone_lp_l);
+        const float output_drive_l = clampf(0.82f + 0.18f * dynamic_drive_l, 0.85f, 1.35f);
+        const float wet_shaped_l = bjt_shape(wet_ap_l, output_drive_l);
+        const float wet_makeup_l = clampf(1.0f / fmaxf(0.25f, params.tuning.bjt_gain_trim * smoothed_user.sat_out_trim), 1.0f, 3.6f);
+        const float wet_core_l = clampf(wet_shaped_l * wet_makeup_l, -1.35f, 1.35f);
+        const float wet_air_l = tone_tilt_process(wet_core_l, tone_tilt, tone_lp_l);
         float wet_l = wet_air_l + wet_core_blend * wet_core_l;
         wet_l = wet_antialias_process(wet_l, wet_smooth_coeff, wet_smooth_l);
 
@@ -1433,18 +1466,11 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float in_probe_r = fabsf(fb_in_r + dry_r);
         input_env_r += ((in_probe_r > input_env_r) ? input_env_attack : input_env_release) * (in_probe_r - input_env_r);
         const float dynamic_drive_r = clampf(dyn_base + dyn_k1 * input_env_r + dyn_k2 * feedback + dyn_k3 * depth, dyn_min, dyn_max);
-        input = bjt_shape(fb_in_r + dry_r, dynamic_drive_r);
+        const float driven_r = bjt_shape(fb_in_r + dry_r, dynamic_drive_r);
+        const float wet_ap_r = allpass_phase_network_process(driven_r, 4);
+        stage[7].oldcvolt = clampf(wet_ap_r, -stage_limit, stage_limit);
 
-        for (int j = 4; j < 8; j++) {
-            float cvolt = vibefilter(input, &stage[j].ecvc) +
-                          vibefilter(input + emitterfb_r * stage[j].oldcvolt, &stage[j].vc);
-            cvolt = clampf(cvolt, -stage_limit, stage_limit);
-            float ocvolt = clampf(vibefilter(cvolt, &stage[j].vcvo), -stage_limit, stage_limit);
-            stage[j].oldcvolt = ocvolt;
-            input = bjt_shape(ocvolt + vibefilter(input, &stage[j].vevo), dynamic_drive_r);
-        }
-
-        float fb_raw_r = clampf(stage[7].oldcvolt * feedback, -1.20f, 1.20f);
+        float fb_raw_r = clampf(wet_ap_r * feedback, -1.20f, 1.20f);
         float fb_sat_r = soft_clip_cubic(fb_raw_r * fb_sat_drive);
         fb_sat_r = clampf(fb_sat_r, -1.15f, 1.15f);
         const float fb_abs_r = fabsf(fb_sat_r);
@@ -1454,8 +1480,11 @@ void Vibe::out(float *smpsl, float *smpsr) {
                                 : 1.0f;
         // Invariant: mirrored bound for right feedback state.
         fbr = zap_denormal(clampf(fb_sat_r * fb_gain_r, -0.95f, 0.95f));
-        const float wet_core_r = input;
-        const float wet_air_r = tone_tilt_process(input, tone_tilt, tone_lp_r);
+        const float output_drive_r = clampf(0.82f + 0.18f * dynamic_drive_r, 0.85f, 1.35f);
+        const float wet_shaped_r = bjt_shape(wet_ap_r, output_drive_r);
+        const float wet_makeup_r = clampf(1.0f / fmaxf(0.25f, params.tuning.bjt_gain_trim * smoothed_user.sat_out_trim), 1.0f, 3.6f);
+        const float wet_core_r = clampf(wet_shaped_r * wet_makeup_r, -1.35f, 1.35f);
+        const float wet_air_r = tone_tilt_process(wet_core_r, tone_tilt, tone_lp_r);
         float wet_r = wet_air_r + wet_core_blend * wet_core_r;
         wet_r = wet_antialias_process(wet_r, wet_smooth_coeff, wet_smooth_r);
 

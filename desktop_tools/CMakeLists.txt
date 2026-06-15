@@ -67,3 +67,20 @@ target_compile_definitions(silence_invariant_modulation_frozen PRIVATE VIBE_DIAG
 add_test(NAME silence_invariant_active COMMAND silence_invariant_active)
 add_test(NAME silence_invariant_feedback_off COMMAND silence_invariant_feedback_off)
 add_test(NAME silence_invariant_modulation_frozen COMMAND silence_invariant_modulation_frozen)
+
+add_executable(phase_notch_test
+    src/phase_notch_test.cpp
+    src/processor.cpp
+    src/wav_io.cpp
+)
+target_include_directories(phase_notch_test PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/src"
+    "${CMAKE_CURRENT_LIST_DIR}/../src"
+)
+if(MSVC)
+    target_compile_options(phase_notch_test PRIVATE /W4)
+else()
+    target_compile_options(phase_notch_test PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+target_compile_definitions(phase_notch_test PRIVATE VIBE_DIAG_FREEZE_MODULATION=1 VIBE_DIAG_DISABLE_FEEDBACK=1)
+add_test(NAME phase_notch_test COMMAND phase_notch_test)
