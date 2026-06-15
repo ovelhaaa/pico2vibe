@@ -87,10 +87,12 @@ jobs:
 
       - name: Process sample audio
         if: steps.sample.outputs.has_input == 'true'
+        env:
+          INPUT_FILE: ${{ steps.sample.outputs.input_file }}
         run: |
           mkdir -p artifacts/audio
           build/desktop_tools/univibe_cli \
-            --input "${{ steps.sample.outputs.input_file }}" \
+            --input "$INPUT_FILE" \
             --output artifacts/audio/output_classic.wav \
             --mode chorus \
             --rate 1.2 \
