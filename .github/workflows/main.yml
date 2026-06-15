@@ -7,13 +7,13 @@ on:
       - "desktop_tools/**"
       - "univibe_rp2350_dma.cpp"
       - "scripts/**"
-      - ".github/workflows/desktop-tools.yml"
+      - ".github/workflows/main.yml"
   pull_request:
     paths:
       - "desktop_tools/**"
       - "univibe_rp2350_dma.cpp"
       - "scripts/**"
-      - ".github/workflows/desktop-tools.yml"
+      - ".github/workflows/main.yml"
   workflow_dispatch:
 
 permissions:
@@ -56,7 +56,6 @@ jobs:
   process-sample:
     runs-on: ubuntu-24.04
     needs: build-cli
-    if: ${{ hashFiles('desktop_tools/test_audio/*') != '' }}
 
     steps:
       - name: Checkout
@@ -73,23 +72,36 @@ jobs:
       - name: Build
         run: cmake --build build/desktop_tools -j
 
+      - name: Select sample audio
+        id: sample
+        run: |
+          INPUT_FILE=$(find desktop_tools/test_audio -type f \( -iname "*.wav" -o -iname "*.mp3" \) -size +44c | head -n 1 || true)
+          if [ -n "$INPUT_FILE" ]; then
+            echo "input_file=$INPUT_FILE" >> "$GITHUB_OUTPUT"
+            echo "has_input=true" >> "$GITHUB_OUTPUT"
+            echo "Using input: $INPUT_FILE"
+          else
+            echo "has_input=false" >> "$GITHUB_OUTPUT"
+            echo "No non-empty sample audio file found; skipping sample processing."
+          fi
+
       - name: Process sample audio
+        if: steps.sample.outputs.has_input == 'true'
         run: |
           mkdir -p artifacts/audio
-          INPUT_FILE=$(find desktop_tools/test_audio -type f \( -iname "*.wav" -o -iname "*.mp3" \) | head -n 1)
-          echo "Using input: $INPUT_FILE"
           build/desktop_tools/univibe_cli \
-            --input "$INPUT_FILE" \
+            --input "${{ steps.sample.outputs.input_file }}" \
             --output artifacts/audio/output_classic.wav \
             --mode chorus \
             --rate 1.2 \
             --depth 0.6 \
-            --width 0.8 \
+            --mix 0.8 \
             --feedback 0.45 \
             --seed 1 \
             --wav-format pcm16
 
       - name: Upload processed audio artifacts
+        if: steps.sample.outputs.has_input == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: desktop-tools-audio-output
