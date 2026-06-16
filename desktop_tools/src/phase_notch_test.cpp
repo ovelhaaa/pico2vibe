@@ -58,7 +58,9 @@ void require_silence_stable() {
     params.seed = 1;
     DesktopUnivibeProcessor processor(params);
     processor.process_in_place(left, right);
-    const float peak = std::max(*std::max_element(left.begin(), left.end()), -*std::min_element(left.begin(), left.end()));
+    const float left_peak = std::max(*std::max_element(left.begin(), left.end()), -*std::min_element(left.begin(), left.end()));
+    const float right_peak = std::max(*std::max_element(right.begin(), right.end()), -*std::min_element(right.begin(), right.end()));
+    const float peak = std::max(left_peak, right_peak);
     if (peak >= 1.0e-6f) {
         throw std::runtime_error("silence produced non-zero output");
     }
