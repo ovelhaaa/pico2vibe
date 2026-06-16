@@ -678,12 +678,16 @@ private:
     float tone_lp_l = 0.0f, tone_lp_r = 0.0f;
     float wet_smooth_l = 0.0f, wet_smooth_r = 0.0f;
     float lamp_memory_l = 0.0f, lamp_memory_r = 0.0f;
-    float stage_lamp_slew[8] = {0};
+    float channel_lamp_slew_l = 1.0f, channel_lamp_slew_r = 1.0f;
+    float wet_comp_l_raw_state = 1.0f, wet_comp_r_raw_state = 1.0f;
     ParamRamp depth_ramp, fb_ramp, mix_ramp, drive_ramp, gain_ramp, sweep_min_ramp, sweep_max_ramp;
     ParamRamp pre_hpf_ramp, tone_tilt_ramp, sat_asym_ramp, sat_trim_ramp;
 
     float vibefilter(float data, fparams *ftype);
     void modulate(float res_l, float res_r);
+    void modulate_allpass(float res_l, float res_r);
+    void modulate_legacy_network(float res_l, float res_r);
+    void reset_audio_state(bool reset_lfo);
     void update_time_constants();
     void update_smoothed_user_params();
     float bjt_shape(float data, float drive);
@@ -971,7 +975,6 @@ Vibe::Vibe(float *efxoutl_, float *efxoutr_) : efxoutl(efxoutl_), efxoutr(efxout
     smoothed_user = params.user;
     lfo.reseed(rng_seed ^ 0xA511E9B3u);
     update_time_constants();
-    init_vibes();
 }
 
 float Vibe::vibefilter(float data, fparams *ftype) {
@@ -992,27 +995,11 @@ void Vibe::update_time_constants() {
 
 void Vibe::reseed(uint32_t seed) {
     rng_seed = seed ? seed : 0x13579BDFu;
-    lamp_state_l = 0.0f;
-    lamp_state_r = 0.0f;
-    mod_res_l = params.tuning.ldr_dark_ohms;
-    mod_res_r = params.tuning.ldr_dark_ohms;
-    fbl = 0.0f;
-    fbr = 0.0f;
-    fb_mid_l = {};
-    fb_mid_r = {};
-    fb_env_l = 0.0f;
-    fb_env_r = 0.0f;
-    input_env_l = 0.0f;
-    input_env_r = 0.0f;
-    wet_smooth_l = 0.0f;
-    wet_smooth_r = 0.0f;
-    tone_lp_l = 0.0f;
-    tone_lp_r = 0.0f;
     sanitize_user_params(&params.user);
     smoothed_user = params.user;
-    lfo.reseed(rng_seed ^ 0xA511E9B3u);
     update_time_constants();
     init_vibes();
+    reset_audio_state(true);
 }
 
 void Vibe::set_user_params(const VibeUserParams &user) {
@@ -1035,6 +1022,7 @@ void Vibe::set_voicing(VibeVoicing voicing_id) {
     smoothed_user = params.user;
     update_time_constants();
     init_vibes();
+    reset_audio_state(false);
 }
 
 void Vibe::set_param(VibeParamId id, float value) {
@@ -1182,15 +1170,15 @@ void Vibe::init_vibes() {
     mod_res_r = clampf(mod_res_r, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
 
     uint32_t component_rng = rng_seed ^ 0x51F15EEDu;
+    channel_lamp_slew_l = clampf(1.0f + params.tuning.stage_time_spread * noise_bipolar(component_rng), 0.85f, 1.15f);
+    channel_lamp_slew_r = clampf(1.0f + params.tuning.stage_time_spread * noise_bipolar(component_rng), 0.85f, 1.15f);
     for (int i = 0; i < 8; i++) {
         const float mismatch_scale = (params.profile == VibeProfile::Modern) ? 0.75f : 1.15f;
         float cap_var = 1.0f + 0.10f * noise_bipolar(component_rng);
         C1[i] = base_C1[i] * cap_var;
         // Pequeno mismatch físico (aproximação) para quebrar simetria perfeita entre células.
         stage[i].ldr_mismatch = 1.0f + (0.025f * mismatch_scale) * noise_bipolar(component_rng);
-        // Pequeno espalhamento criativo para "chewiness" sem fugir do voicing clássico.
-        stage_lamp_slew[i] = 1.0f + params.tuning.stage_time_spread * noise_bipolar(component_rng);
-        stage_lamp_slew[i] = clampf(stage_lamp_slew[i], 0.85f, 1.15f);
+        // Channel lamp slew (not per-stage) gives mild optical inertia mismatch between L/R.
         stage[i].oldcvolt = 0.0f;
         en1[i] = k * R1 * C1[i];
         en0[i] = 1.0f;
@@ -1223,37 +1211,97 @@ void Vibe::set_filter_coefs(fparams &target, float n0, float n1, float d1) {
     target.d1 = clampf(d1, -0.9995f, 0.9995f);
 }
 
-void Vibe::modulate(float res_l, float res_r) {
+void Vibe::reset_audio_state(bool reset_lfo) {
+    lamp_state_l = 0.0f;
+    lamp_state_r = 0.0f;
+    lamp_memory_l = 0.0f;
+    lamp_memory_r = 0.0f;
+    mod_res_l = params.tuning.ldr_dark_ohms;
+    mod_res_r = params.tuning.ldr_dark_ohms;
+    fbl = 0.0f;
+    fbr = 0.0f;
+    fb_mid_l = {};
+    fb_mid_r = {};
+    fb_env_l = 0.0f;
+    fb_env_r = 0.0f;
+    input_env_l = 0.0f;
+    input_env_r = 0.0f;
+    wet_env_l = 0.0f;
+    wet_env_r = 0.0f;
+    wet_smooth_l = 0.0f;
+    wet_smooth_r = 0.0f;
+    tone_lp_l = 0.0f;
+    tone_lp_r = 0.0f;
+    pre_hpf_x1_l = 0.0f;
+    pre_hpf_y1_l = 0.0f;
+    pre_hpf_x1_r = 0.0f;
+    pre_hpf_y1_r = 0.0f;
+    output_trim_smoothed = 1.0f;
+    wet_comp_l_raw_state = 1.0f;
+    wet_comp_r_raw_state = 1.0f;
+
+    for (int i = 0; i < 8; ++i) {
+        stage[i].vc = {};
+        stage[i].vcvo = {};
+        stage[i].ecvc = {};
+        stage[i].vevo = {};
+        stage[i].oldcvolt = 0.0f;
+        ap_stage[i] = {};
+        ap_a[i] = 0.0f;
+        ap_a_target[i] = 0.0f;
+    }
+
+    if (reset_lfo) {
+        lfo.reseed(rng_seed ^ 0xA511E9B3u);
+    }
+
+    modulate(mod_res_l, mod_res_r);
+}
+
+void Vibe::modulate_allpass(float res_l, float res_r) {
     for (int i = 0; i < 8; i++) {
-        float base_res = (i < 4) ? res_l : res_r;
+        const float base_res = (i < 4) ? res_l : res_r;
+        float min_stage_res_val = params.tuning.ldr_min_ohms;
+#if VIBE_LIMIT_470PF_STAGE
+        min_stage_res_val = fmaxf(min_stage_res_val, min_stage_res[i]);
+#endif
+        const float stage_res = clampf(base_res * stage[i].ldr_mismatch,
+                                       min_stage_res_val,
+                                       params.tuning.ldr_max_ohms);
+        const float currentRv = 4700.0f + stage_res;
+        const float fc = 1.0f / (2.0f * kPi * currentRv * C1[i]);
+        ap_a_target[i] = allpass_coef_from_fc(fc);
+    }
+}
+
+void Vibe::modulate_legacy_network(float res_l, float res_r) {
+    for (int i = 0; i < 8; i++) {
+        const float base_res = (i < 4) ? res_l : res_r;
         // Clamp the stage LDR emulation after mismatch so the network never sees non-physical extremes.
         float min_stage_res_val = params.tuning.ldr_min_ohms;
 #if VIBE_LIMIT_470PF_STAGE
         min_stage_res_val = fmaxf(min_stage_res_val, min_stage_res[i]);
 #endif
-        float stage_res = clampf(base_res * stage[i].ldr_mismatch,
-                                 min_stage_res_val,
-                                 params.tuning.ldr_max_ohms);
-        float currentRv = 4700.0f + stage_res;
-        const float fc = 1.0f / (2.0f * kPi * currentRv * C1[i]);
-        ap_a_target[i] = allpass_coef_from_fc(fc);
+        const float stage_res = clampf(base_res * stage[i].ldr_mismatch,
+                                       min_stage_res_val,
+                                       params.tuning.ldr_max_ohms);
+        const float currentRv = 4700.0f + stage_res;
+        const float R1pRv = R1 + currentRv;
+        const float C2pC1 = C2 + C1[i];
 
-        float R1pRv = R1 + currentRv;
-        float C2pC1 = C2 + C1[i];
+        const float cd1_val  = k * R1pRv * C1[i];
+        const float cn1_val  = k * gain_bjt * currentRv * C1[i];
+        const float ecd1_val = k * cd1_val * C2 / C2pC1;
+        const float ecn1_val = k * gain_bjt * R1 * cd1_val * C2 / (currentRv * C2pC1);
+        const float on1_val  = k * currentRv * C2;
 
-        float cd1_val  = k * R1pRv * C1[i];
-        float cn1_val  = k * gain_bjt * currentRv * C1[i];
-        float ecd1_val = k * cd1_val * C2 / C2pC1;
-        float ecn1_val = k * gain_bjt * R1 * cd1_val * C2 / (currentRv * C2pC1);
-        float on1_val  = k * currentRv * C2;
-
-        float cd0_val  = 1.0f + C1[i] / C2;
-        float ecd0_val = 1.0f;
-        float od0_val  = 1.0f + C2 / C1[i];
-        float ed0_val  = 1.0f + C1[i] / C2;
-        float cn0_val  = gain_bjt * (1.0f + C1[i] / C2);
-        float on0_val  = 1.0f;
-        float ecn0_val = 0.0f;
+        const float cd0_val  = 1.0f + C1[i] / C2;
+        const float ecd0_val = 1.0f;
+        const float od0_val  = 1.0f + C2 / C1[i];
+        const float ed0_val  = 1.0f + C1[i] / C2;
+        const float cn0_val  = gain_bjt * (1.0f + C1[i] / C2);
+        const float on0_val  = 1.0f;
+        const float ecn0_val = 0.0f;
 
         float tmp = 1.0f / (cd1_val + cd0_val);
         set_filter_coefs(stage[i].vc, tmp * (cn1_val + cn0_val), tmp * (cn0_val - cn1_val), tmp * (cd0_val - cd1_val));
@@ -1264,9 +1312,17 @@ void Vibe::modulate(float res_l, float res_r) {
         tmp = 1.0f / (on1_val + od0_val);
         set_filter_coefs(stage[i].vcvo, tmp * (on1_val + on0_val), tmp * (on0_val - on1_val), tmp * (od0_val - on1_val));
 
-        float ed1_val = k * R1pRv * C1[i];
+        const float ed1_val = k * R1pRv * C1[i];
         tmp = 1.0f / (ed1_val + ed0_val);
         set_filter_coefs(stage[i].vevo, tmp * (en1[i] + en0[i]), tmp * (en0[i] - en1[i]), tmp * (ed0_val - ed1_val));
+    }
+}
+
+void Vibe::modulate(float res_l, float res_r) {
+    if (params.legacy_saturation) {
+        modulate_legacy_network(res_l, res_r);
+    } else {
+        modulate_allpass(res_l, res_r);
     }
 }
 
@@ -1334,9 +1390,6 @@ void Vibe::out(float *smpsl, float *smpsr) {
     const float wet_smooth_hz = (params.profile == VibeProfile::Modern) ? 7200.0f : 5400.0f;
     const float wet_smooth_coeff = 1.0f - expf(-2.0f * kPi * wet_smooth_hz * cSAMPLE_RATE);
 
-    float wet_comp_l_raw_state = 1.0f;
-    float wet_comp_r_raw_state = 1.0f;
-
     for (int i = 0; i < PERIOD; i++) {
         smoothed_user.sat_asymmetry = sat_asym_ramp.tick();
         smoothed_user.sat_out_trim = sat_trim_ramp.tick();
@@ -1367,8 +1420,8 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float target_l_h = 0.5f + 0.5f * tanhf((lamp_memory_l - 0.5f) * 2.3f);
         const float target_r_h = 0.5f + 0.5f * tanhf((lamp_memory_r - 0.5f) * 2.3f);
 
-        const float stage_slew_l = stage_lamp_slew[0];
-        const float stage_slew_r = stage_lamp_slew[4];
+        const float stage_slew_l = channel_lamp_slew_l;
+        const float stage_slew_r = channel_lamp_slew_r;
         const float atk_l = clampf(lamp_attack * stage_slew_l, 0.0001f, 1.0f);
         const float rel_l = clampf(lamp_release / stage_slew_l, 0.0001f, 1.0f);
         const float atk_r = clampf(lamp_attack * stage_slew_r, 0.0001f, 1.0f);
@@ -1432,13 +1485,15 @@ void Vibe::out(float *smpsl, float *smpsr) {
         // Adaptive drive base follows input drive; other coefficients are block constants.
         const float dyn_base = clampf(0.80f + 0.34f * input_drive, 0.80f, 2.20f);
 
-        float dry_l = smpsl[i];
-        dry_l = hp_pre(dry_l, pre_hpf_hz, pre_hpf_x1_l, pre_hpf_y1_l);
+        const float dry_raw_l = smpsl[i];
+        const float dry_raw_r = smpsr ? smpsr[i] : smpsl[i];
+        const float proc_l = hp_pre(dry_raw_l, pre_hpf_hz, pre_hpf_x1_l, pre_hpf_y1_l);
+        const float proc_r = hp_pre(dry_raw_r, pre_hpf_hz, pre_hpf_x1_r, pre_hpf_y1_r);
         const float fb_in_l = feedback_profile_process(fbl, params.feedback_profile, params.profile, fb_mid_l);
-        const float in_probe_l = fabsf(fb_in_l + dry_l);
+        const float in_probe_l = fabsf(fb_in_l + proc_l);
         input_env_l += ((in_probe_l > input_env_l) ? input_env_attack : input_env_release) * (in_probe_l - input_env_l);
         const float dynamic_drive_l = clampf(dyn_base + dyn_k1 * input_env_l + dyn_k2 * feedback + dyn_k3 * depth, dyn_min, dyn_max);
-        const float driven_l = bjt_shape(fb_in_l + dry_l, dynamic_drive_l);
+        const float driven_l = bjt_shape(fb_in_l + proc_l, dynamic_drive_l);
         float wet_phase_l = driven_l;
         if (params.legacy_saturation) {
             for (int j = 0; j < 4; j++) {
@@ -1473,13 +1528,11 @@ void Vibe::out(float *smpsl, float *smpsr) {
         float wet_l = wet_air_l + wet_core_blend * wet_core_l;
         wet_l = wet_antialias_process(wet_l, wet_smooth_coeff, wet_smooth_l);
 
-        float dry_r = smpsr[i];
-        dry_r = hp_pre(dry_r, pre_hpf_hz, pre_hpf_x1_r, pre_hpf_y1_r);
         const float fb_in_r = feedback_profile_process(fbr, params.feedback_profile, params.profile, fb_mid_r);
-        const float in_probe_r = fabsf(fb_in_r + dry_r);
+        const float in_probe_r = fabsf(fb_in_r + proc_r);
         input_env_r += ((in_probe_r > input_env_r) ? input_env_attack : input_env_release) * (in_probe_r - input_env_r);
         const float dynamic_drive_r = clampf(dyn_base + dyn_k1 * input_env_r + dyn_k2 * feedback + dyn_k3 * depth, dyn_min, dyn_max);
-        const float driven_r = bjt_shape(fb_in_r + dry_r, dynamic_drive_r);
+        const float driven_r = bjt_shape(fb_in_r + proc_r, dynamic_drive_r);
         float wet_phase_r = driven_r;
         if (params.legacy_saturation) {
             for (int j = 4; j < 8; j++) {
@@ -1545,8 +1598,8 @@ void Vibe::out(float *smpsl, float *smpsr) {
         wet_l *= wet_comp_l * wet_mode_trim;
         wet_r *= wet_comp_r * wet_mode_trim;
 
-        const float mixed_l = mode_chorus ? (dry_l * dry_gain + wet_l * wet_gain) : wet_l;
-        const float mixed_r = mode_chorus ? (dry_r * dry_gain + wet_r * wet_gain) : wet_r;
+        const float mixed_l = mode_chorus ? (dry_raw_l * dry_gain + wet_l * wet_gain) : wet_l;
+        const float mixed_r = mode_chorus ? (dry_raw_r * dry_gain + wet_r * wet_gain) : wet_r;
         efxoutl[i] = final_gain * lpanning * mixed_l;
         efxoutr[i] = final_gain * rpanning * mixed_r;
     }
