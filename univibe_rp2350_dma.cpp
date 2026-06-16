@@ -36,6 +36,14 @@
 
 #include "src/dsp/vibe_core.hpp"
 
+#ifndef AUDIO_DIAG_RAW_INTEGER_BYPASS
+#define AUDIO_DIAG_RAW_INTEGER_BYPASS 0
+#endif
+
+#ifndef AUDIO_DIAG_FLOAT_BYPASS
+#define AUDIO_DIAG_FLOAT_BYPASS 0
+#endif
+
 // ============================================================================
 // Conversão PCM <-> float
 // ============================================================================
@@ -87,11 +95,13 @@ static inline float dc_block_sample(OutputDcBlocker &s, float x) {
 #endif
 }
 
-static inline float condition_output_sample(OutputConditioner &st, float x, OutputDcBlocker &dc_state) {
-    float y = dc_block_sample(dc_state, x);
+static inline void condition_output_frame(OutputConditioner &st, float in_l, float in_r, float *out_l, float *out_r) {
+    float y_l = dc_block_sample(st.dc_l, in_l);
+    float y_r = dc_block_sample(st.dc_r, in_r);
 
 #if ENABLE_OUTPUT_AUTO_HEADROOM
-    const float abs_y = fabsf(y);
+    // Update shared gain once per stereo frame so R does not depend on serial L-before-R processing.
+    const float abs_y = fmaxf(fabsf(y_l), fabsf(y_r));
     const float env_attack = 0.14f;
     const float env_release = 0.003f;
     st.env += (abs_y > st.env ? env_attack : env_release) * (abs_y - st.env);
@@ -99,15 +109,18 @@ static inline float condition_output_sample(OutputConditioner &st, float x, Outp
     const float trim_attack = 0.20f;
     const float trim_release = 0.0015f;
     st.trim += (target < st.trim ? trim_attack : trim_release) * (target - st.trim);
-    y *= st.trim;
+    y_l *= st.trim;
+    y_r *= st.trim;
 #endif
 
 #if ENABLE_OUTPUT_SOFT_LIMITER
     // Safety limiter: soft knee near full-scale avoids edgy hard clipping.
     const float limit_drive = 1.25f;
-    y = soft_clip_cubic(y * limit_drive) * (1.0f / limit_drive);
+    y_l = soft_clip_cubic(y_l * limit_drive) * (1.0f / limit_drive);
+    y_r = soft_clip_cubic(y_r * limit_drive) * (1.0f / limit_drive);
 #endif
-    return y;
+    *out_l = y_l;
+    *out_r = y_r;
 }
 
 // ============================================================================
@@ -364,19 +377,34 @@ static void audio_start(void) {
 // ============================================================================
 
 static void process_block(int block_index) {
+#if AUDIO_DIAG_RAW_INTEGER_BYPASS
+    for (int i = 0; i < PERIOD; i++) {
+        tx_dma_buf[block_index][2 * i + 0] = rx_dma_buf[block_index][2 * i + 0];
+        tx_dma_buf[block_index][2 * i + 1] = rx_dma_buf[block_index][2 * i + 1];
+    }
+#else
     for (int i = 0; i < PERIOD; i++) {
         dsp_in_l[i] = pcm24_to_float(rx_dma_buf[block_index][2 * i + 0]);
         dsp_in_r[i] = pcm24_to_float(rx_dma_buf[block_index][2 * i + 1]);
     }
 
+#if AUDIO_DIAG_FLOAT_BYPASS
+    for (int i = 0; i < PERIOD; i++) {
+        dsp_out_l[i] = dsp_in_l[i];
+        dsp_out_r[i] = dsp_in_r[i];
+    }
+#else
     univibe.out(dsp_in_l, dsp_in_r);
+#endif
 
     for (int i = 0; i < PERIOD; i++) {
-        const float out_l = condition_output_sample(output_conditioner, dsp_out_l[i], output_conditioner.dc_l);
-        const float out_r = condition_output_sample(output_conditioner, dsp_out_r[i], output_conditioner.dc_r);
+        float out_l = 0.0f;
+        float out_r = 0.0f;
+        condition_output_frame(output_conditioner, dsp_out_l[i], dsp_out_r[i], &out_l, &out_r);
         tx_dma_buf[block_index][2 * i + 0] = float_to_pcm24(out_l, output_conditioner.dither_rng);
         tx_dma_buf[block_index][2 * i + 1] = float_to_pcm24(out_r, output_conditioner.dither_rng);
     }
+#endif
 
     __dmb();
     tx_block_ready[block_index] = true;
