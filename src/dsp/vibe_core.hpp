@@ -1201,7 +1201,13 @@ void Vibe::init_vibes() {
         min_stage_res[i] = 0.0f;
 #endif
     }
-    modulate(mod_res_l, mod_res_r);
+    // Prime both engines so debug/desktop code can flip legacy_saturation while
+    // modulation is frozen without leaving the inactive coefficient set at zero.
+    modulate_allpass(mod_res_l, mod_res_r);
+    modulate_legacy_network(mod_res_l, mod_res_r);
+    for (int i = 0; i < 8; ++i) {
+        ap_a[i] = ap_a_target[i];
+    }
 }
 
 void Vibe::set_filter_coefs(fparams &target, float n0, float n1, float d1) {
@@ -1255,7 +1261,12 @@ void Vibe::reset_audio_state(bool reset_lfo) {
         lfo.reseed(rng_seed ^ 0xA511E9B3u);
     }
 
-    modulate(mod_res_l, mod_res_r);
+    // Reset should land on the static filter positions, not slew audibly from 0.
+    modulate_allpass(mod_res_l, mod_res_r);
+    modulate_legacy_network(mod_res_l, mod_res_r);
+    for (int i = 0; i < 8; ++i) {
+        ap_a[i] = ap_a_target[i];
+    }
 }
 
 void Vibe::modulate_allpass(float res_l, float res_r) {
