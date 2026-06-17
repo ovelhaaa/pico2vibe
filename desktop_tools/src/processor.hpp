@@ -17,6 +17,18 @@ struct UnivibeParams {
         classic_vibrato,
         deep_throb,
         modern_wide,
+        vintage_univibe_chorus,
+        deep_hendrix_swirl,
+        trower_lead,
+        gentle_clean_vibe,
+        wide_stereo_dream,
+        vintage_vibrato,
+        shallow_always_on,
+        psychedelic_slow_sweep,
+        fast_rotary_vibe,
+        bass_synth_friendly,
+        lo_fi_lamp_drift,
+        modern_hifi_phase_vibe,
     };
 
     bool mode_chorus = true;

@@ -45,7 +45,7 @@ void usage() {
         << "  dsp_validate [opcoes]\n\n"
         << "Opcoes:\n"
         << "  --out-dir <pasta>              Pasta de saida (padrao: analysis_out)\n"
-        << "  --preset <nome>                Pode repetir. Presets: classic, subtle, deep, vibrato\n"
+        << "  --preset <nome>                Pode repetir. Presets: classic, subtle, deep, vibrato, vintage, hendrix, trower, gentle, stereo, vintage_vibrato, always_on, slow_sweep, rotary, bass_synth, lo_fi, hifi\n"
         << "  --levels-db <lista>            Ex: -24,-18,-12,-6,0\n"
         << "  --sweep-seconds <seg>          Duracao do sweep (padrao: 8)\n"
         << "  --compare-to <pasta>           Pasta de baseline para gerar diff de summary\n"
@@ -96,6 +96,31 @@ UnivibeParams preset_params(const std::string& name) {
         p.depth = 0.72f;
         p.feedback = 0.25f;
         p.mix = 1.0f;
+    } else if (name == "vintage") {
+        p.preset = UnivibeParams::Preset::vintage_univibe_chorus;
+    } else if (name == "hendrix") {
+        p.preset = UnivibeParams::Preset::deep_hendrix_swirl;
+    } else if (name == "trower") {
+        p.preset = UnivibeParams::Preset::trower_lead;
+    } else if (name == "gentle") {
+        p.preset = UnivibeParams::Preset::gentle_clean_vibe;
+    } else if (name == "stereo") {
+        p.preset = UnivibeParams::Preset::wide_stereo_dream;
+    } else if (name == "vintage_vibrato") {
+        p.preset = UnivibeParams::Preset::vintage_vibrato;
+        p.mode_chorus = false;
+    } else if (name == "always_on") {
+        p.preset = UnivibeParams::Preset::shallow_always_on;
+    } else if (name == "slow_sweep") {
+        p.preset = UnivibeParams::Preset::psychedelic_slow_sweep;
+    } else if (name == "rotary") {
+        p.preset = UnivibeParams::Preset::fast_rotary_vibe;
+    } else if (name == "bass_synth") {
+        p.preset = UnivibeParams::Preset::bass_synth_friendly;
+    } else if (name == "lo_fi") {
+        p.preset = UnivibeParams::Preset::lo_fi_lamp_drift;
+    } else if (name == "hifi") {
+        p.preset = UnivibeParams::Preset::modern_hifi_phase_vibe;
     } else {
         throw std::runtime_error("Preset desconhecido: " + name);
     }
