@@ -54,13 +54,25 @@ float vibe_get_param_normalized(VibeHandle* h, uint32_t id) { return h->engine.g
 void vibe_set_param(VibeHandle* h, uint32_t id, float v) { h->engine.set_param(static_cast<VibeParamId>(id), v); }
 void vibe_set_param_normalized(VibeHandle* h, uint32_t id, float v) { h->engine.set_param_normalized(static_cast<VibeParamId>(id), v); }
 
-uint32_t vibe_get_voicing_count() { return 4u; }
+uint32_t vibe_get_voicing_count() { return kVibeVoicingCount; }
 const char* vibe_get_voicing_name(uint32_t id) {
     switch (static_cast<VibeVoicing>(id)) {
         case VibeVoicing::ClassicChorus: return "Classic Chorus";
         case VibeVoicing::ClassicVibrato: return "Classic Vibrato";
         case VibeVoicing::DeepThrob: return "Deep Throb";
         case VibeVoicing::ModernWide: return "Modern Wide";
+        case VibeVoicing::VintageUniVibeChorus: return "Vintage Uni-Vibe Chorus";
+        case VibeVoicing::DeepHendrixSwirl: return "Deep Hendrix Swirl";
+        case VibeVoicing::TrowerLead: return "Trower Lead";
+        case VibeVoicing::GentleCleanVibe: return "Gentle Clean Vibe";
+        case VibeVoicing::WideStereoDream: return "Wide Stereo Dream";
+        case VibeVoicing::VintageVibrato: return "Vintage Vibrato";
+        case VibeVoicing::ShallowAlwaysOn: return "Shallow Always-On";
+        case VibeVoicing::PsychedelicSlowSweep: return "Psychedelic Slow Sweep";
+        case VibeVoicing::FastRotaryVibe: return "Fast Rotary-ish Vibe";
+        case VibeVoicing::BassSynthFriendly: return "Bass/Synth Friendly Vibe";
+        case VibeVoicing::LoFiLampDrift: return "Lo-Fi Lamp Drift";
+        case VibeVoicing::ModernHiFiPhaseVibe: return "Modern Hi-Fi Phase Vibe";
         default: return "Unknown";
     }
 }

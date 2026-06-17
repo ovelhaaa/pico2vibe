@@ -266,7 +266,21 @@ enum class VibeVoicing : uint8_t {
     ClassicVibrato,
     DeepThrob,
     ModernWide,
+    VintageUniVibeChorus,
+    DeepHendrixSwirl,
+    TrowerLead,
+    GentleCleanVibe,
+    WideStereoDream,
+    VintageVibrato,
+    ShallowAlwaysOn,
+    PsychedelicSlowSweep,
+    FastRotaryVibe,
+    BassSynthFriendly,
+    LoFiLampDrift,
+    ModernHiFiPhaseVibe,
 };
+
+static constexpr uint32_t kVibeVoicingCount = static_cast<uint32_t>(VibeVoicing::ModernHiFiPhaseVibe) + 1u;
 
 struct VibePreset {
     VibeVoicing voicing = VibeVoicing::ClassicChorus;
@@ -468,6 +482,270 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.musical.auto_level_amount = 0.70f;
             preset.musical.stereo_width = 1.18f;
             preset.feedback_profile = FeedbackProfile::ModernFeedback;
+            preset.lfo_shape = LfoShape::Sine;
+            break;
+
+        case VibeVoicing::VintageUniVibeChorus:
+            // Warm liquid chorus: classic mono-ish Uni-Vibe chew with softened highs.
+            preset.profile = VibeProfile::Classic;
+            preset.chorus_mode = true;
+            preset.user.mix = 0.54f;
+            preset.user.depth = 0.74f;
+            preset.user.feedback = 0.30f;
+            preset.user.input_drive = 1.70f;
+            preset.user.output_gain = 0.98f;
+            preset.user.sweep_min = 0.55f;
+            preset.user.sweep_max = 0.96f;
+            preset.user.lfo_rate_hz = 1.25f;
+            preset.user.pre_hpf_hz = 20.0f;
+            preset.user.tone_tilt = -0.16f;
+            preset.user.sat_asymmetry = 0.045f;
+            preset.user.sat_out_trim = 0.94f;
+            preset.tuning.lamp_hysteresis = 0.026f;
+            preset.musical.auto_level_amount = 0.38f;
+            preset.musical.stereo_width = 0.42f;
+            preset.lfo_shape = LfoShape::BulbAsym;
+            break;
+        case VibeVoicing::DeepHendrixSwirl:
+            // Deep vocal swirl with slow lamp memory and stable feedback chew.
+            preset.profile = VibeProfile::Classic;
+            preset.chorus_mode = true;
+            preset.user.mix = 0.64f;
+            preset.user.depth = 0.90f;
+            preset.user.feedback = 0.48f;
+            preset.user.input_drive = 2.15f;
+            preset.user.output_gain = 0.92f;
+            preset.user.sweep_min = 0.47f;
+            preset.user.sweep_max = 1.0f;
+            preset.user.lfo_rate_hz = 0.95f;
+            preset.user.pre_hpf_hz = 24.0f;
+            preset.user.tone_tilt = -0.20f;
+            preset.user.sat_asymmetry = 0.075f;
+            preset.user.sat_out_trim = 0.88f;
+            preset.tuning.lamp_attack_sec = 0.014f;
+            preset.tuning.lamp_release_sec = 0.058f;
+            preset.tuning.lamp_hysteresis = 0.036f;
+            preset.tuning.feedback_sat = 0.66f;
+            preset.musical.auto_level_amount = 0.34f;
+            preset.musical.stereo_width = 0.70f;
+            preset.lfo_shape = LfoShape::BulbAsym;
+            break;
+        case VibeVoicing::TrowerLead:
+            // Lead voice: forward mids, controlled top and wet blend that keeps pick attack.
+            preset.profile = VibeProfile::Classic;
+            preset.chorus_mode = true;
+            preset.user.mix = 0.50f;
+            preset.user.depth = 0.80f;
+            preset.user.feedback = 0.40f;
+            preset.user.input_drive = 2.45f;
+            preset.user.output_gain = 0.93f;
+            preset.user.sweep_min = 0.52f;
+            preset.user.sweep_max = 0.98f;
+            preset.user.lfo_rate_hz = 1.55f;
+            preset.user.pre_hpf_hz = 30.0f;
+            preset.user.tone_tilt = -0.08f;
+            preset.user.sat_asymmetry = 0.10f;
+            preset.user.sat_out_trim = 0.86f;
+            preset.tuning.tilt_hz = 720.0f;
+            preset.tuning.feedback_sat = 0.62f;
+            preset.musical.auto_level_amount = 0.45f;
+            preset.musical.stereo_width = 0.50f;
+            preset.lfo_shape = LfoShape::BulbAsym;
+            break;
+        case VibeVoicing::GentleCleanVibe:
+            // Subtle clean arpeggio wash with low feedback and gentle pitch movement.
+            preset.profile = VibeProfile::Modern;
+            preset.chorus_mode = true;
+            preset.user.mix = 0.32f;
+            preset.user.depth = 0.46f;
+            preset.user.feedback = 0.10f;
+            preset.user.input_drive = 1.05f;
+            preset.user.output_gain = 1.0f;
+            preset.user.sweep_min = 0.60f;
+            preset.user.sweep_max = 0.88f;
+            preset.user.lfo_rate_hz = 0.62f;
+            preset.user.pre_hpf_hz = 18.0f;
+            preset.user.tone_tilt = -0.04f;
+            preset.user.sat_asymmetry = 0.015f;
+            preset.user.sat_out_trim = 1.0f;
+            preset.musical.auto_level_amount = 0.58f;
+            preset.musical.stereo_width = 0.44f;
+            preset.lfo_shape = LfoShape::Sine;
+            break;
+        case VibeVoicing::WideStereoDream:
+            // Wide complementary L/R sweep for pads and recording, kept mono-compatible by moderate feedback.
+            preset.profile = VibeProfile::Modern;
+            preset.chorus_mode = true;
+            preset.user.mix = 0.60f;
+            preset.user.depth = 0.66f;
+            preset.user.feedback = 0.20f;
+            preset.user.input_drive = 1.35f;
+            preset.user.output_gain = 0.96f;
+            preset.user.sweep_min = 0.55f;
+            preset.user.sweep_max = 0.94f;
+            preset.user.lfo_rate_hz = 0.42f;
+            preset.user.pre_hpf_hz = 18.0f;
+            preset.user.tone_tilt = 0.06f;
+            preset.user.drift_amount = 0.012f;
+            preset.tuning.stereo_phase_offset = 0.38f;
+            preset.musical.auto_level_amount = 0.72f;
+            preset.musical.stereo_width = 1.22f;
+            preset.lfo_shape = LfoShape::Sine;
+            break;
+        case VibeVoicing::VintageVibrato:
+            // Wet vibrato with vintage lamp lag; obvious wobble without seasick depth.
+            preset.profile = VibeProfile::Classic;
+            preset.chorus_mode = false;
+            preset.user.mix = 1.0f;
+            preset.user.depth = 0.58f;
+            preset.user.feedback = 0.18f;
+            preset.user.input_drive = 1.45f;
+            preset.user.output_gain = 0.96f;
+            preset.user.sweep_min = 0.56f;
+            preset.user.sweep_max = 0.93f;
+            preset.user.lfo_rate_hz = 2.20f;
+            preset.user.pre_hpf_hz = 20.0f;
+            preset.user.tone_tilt = -0.18f;
+            preset.user.sat_asymmetry = 0.04f;
+            preset.musical.auto_level_amount = 0.28f;
+            preset.musical.stereo_width = 0.35f;
+            preset.lfo_shape = LfoShape::BulbAsym;
+            break;
+        case VibeVoicing::ShallowAlwaysOn:
+            // Almost invisible animation: unity-ish level, neutral tone and very low feedback.
+            preset.profile = VibeProfile::Modern;
+            preset.chorus_mode = true;
+            preset.user.mix = 0.22f;
+            preset.user.depth = 0.26f;
+            preset.user.feedback = 0.06f;
+            preset.user.input_drive = 0.85f;
+            preset.user.output_gain = 1.0f;
+            preset.user.sweep_min = 0.62f;
+            preset.user.sweep_max = 0.82f;
+            preset.user.lfo_rate_hz = 0.85f;
+            preset.user.pre_hpf_hz = 16.0f;
+            preset.user.tone_tilt = 0.0f;
+            preset.user.drift_amount = 0.006f;
+            preset.user.sat_asymmetry = 0.0f;
+            preset.user.sat_out_trim = 1.0f;
+            preset.musical.auto_level_amount = 0.50f;
+            preset.musical.stereo_width = 0.32f;
+            preset.lfo_shape = LfoShape::Sine;
+            break;
+        case VibeVoicing::PsychedelicSlowSweep:
+            // Very slow deep sweep for sustained chords and texture; feedback below runaway.
+            preset.profile = VibeProfile::Classic;
+            preset.chorus_mode = true;
+            preset.user.mix = 0.68f;
+            preset.user.depth = 0.94f;
+            preset.user.feedback = 0.54f;
+            preset.user.input_drive = 1.85f;
+            preset.user.output_gain = 0.88f;
+            preset.user.sweep_min = 0.44f;
+            preset.user.sweep_max = 1.0f;
+            preset.user.lfo_rate_hz = 0.18f;
+            preset.user.pre_hpf_hz = 24.0f;
+            preset.user.tone_tilt = -0.22f;
+            preset.user.sat_asymmetry = 0.06f;
+            preset.user.sat_out_trim = 0.86f;
+            preset.tuning.lamp_attack_sec = 0.018f;
+            preset.tuning.lamp_release_sec = 0.075f;
+            preset.tuning.lamp_hysteresis = 0.040f;
+            preset.tuning.feedback_sat = 0.70f;
+            preset.musical.auto_level_amount = 0.32f;
+            preset.musical.stereo_width = 0.76f;
+            preset.lfo_shape = LfoShape::BulbAsym;
+            break;
+        case VibeVoicing::FastRotaryVibe:
+            // Fast rotary-ish shimmer with moderate depth and extra smoothing against zipper noise.
+            preset.profile = VibeProfile::Modern;
+            preset.chorus_mode = true;
+            preset.user.mix = 0.44f;
+            preset.user.depth = 0.48f;
+            preset.user.feedback = 0.16f;
+            preset.user.input_drive = 1.55f;
+            preset.user.output_gain = 0.97f;
+            preset.user.sweep_min = 0.58f;
+            preset.user.sweep_max = 0.90f;
+            preset.user.lfo_rate_hz = 5.20f;
+            preset.user.pre_hpf_hz = 26.0f;
+            preset.user.tone_tilt = 0.04f;
+            preset.user.sat_out_trim = 0.96f;
+            preset.tuning.lfo_shape_smoothing = 0.36f;
+            preset.tuning.control_smoothing_hz = 26.0f;
+            preset.musical.auto_level_amount = 0.68f;
+            preset.musical.stereo_width = 0.68f;
+            preset.lfo_shape = LfoShape::Sine;
+            break;
+        case VibeVoicing::BassSynthFriendly:
+            // Low-end-safe chorus with low HPF, low feedback and extra headroom.
+            preset.profile = VibeProfile::Modern;
+            preset.chorus_mode = true;
+            preset.user.mix = 0.34f;
+            preset.user.depth = 0.52f;
+            preset.user.feedback = 0.08f;
+            preset.user.input_drive = 1.05f;
+            preset.user.output_gain = 0.92f;
+            preset.user.sweep_min = 0.60f;
+            preset.user.sweep_max = 0.92f;
+            preset.user.lfo_rate_hz = 0.90f;
+            preset.user.pre_hpf_hz = 8.0f;
+            preset.user.tone_tilt = -0.06f;
+            preset.user.sat_asymmetry = 0.01f;
+            preset.user.sat_out_trim = 0.96f;
+            preset.tuning.pre_hpf_hz_min = 8.0f;
+            preset.tuning.stereo_phase_offset = 0.18f;
+            preset.musical.auto_level_amount = 0.62f;
+            preset.musical.stereo_width = 0.36f;
+            preset.lfo_shape = LfoShape::Sine;
+            break;
+        case VibeVoicing::LoFiLampDrift:
+            // Organic lamp drift: asymmetric LFO and mild saturation without adding noise.
+            preset.profile = VibeProfile::Classic;
+            preset.chorus_mode = true;
+            preset.user.mix = 0.56f;
+            preset.user.depth = 0.68f;
+            preset.user.feedback = 0.26f;
+            preset.user.input_drive = 2.05f;
+            preset.user.output_gain = 0.94f;
+            preset.user.sweep_min = 0.54f;
+            preset.user.sweep_max = 0.96f;
+            preset.user.lfo_rate_hz = 0.70f;
+            preset.user.drift_amount = 0.034f;
+            preset.user.drift_rate_hz = 0.045f;
+            preset.user.pre_hpf_hz = 22.0f;
+            preset.user.tone_tilt = -0.12f;
+            preset.user.sat_asymmetry = 0.13f;
+            preset.user.sat_out_trim = 0.90f;
+            preset.tuning.lamp_hysteresis = 0.034f;
+            preset.tuning.stage_time_spread = 0.026f;
+            preset.tuning.lfo_shape_smoothing = 0.16f;
+            preset.musical.auto_level_amount = 0.36f;
+            preset.musical.stereo_width = 0.58f;
+            preset.lfo_shape = LfoShape::BulbAsym;
+            break;
+        case VibeVoicing::ModernHiFiPhaseVibe:
+            // Clean production voice: defined sweep, low saturation and controlled stereo.
+            preset.profile = VibeProfile::Modern;
+            preset.chorus_mode = true;
+            preset.user.mix = 0.48f;
+            preset.user.depth = 0.62f;
+            preset.user.feedback = 0.18f;
+            preset.user.input_drive = 0.95f;
+            preset.user.output_gain = 1.0f;
+            preset.user.sweep_min = 0.56f;
+            preset.user.sweep_max = 0.93f;
+            preset.user.lfo_rate_hz = 1.25f;
+            preset.user.pre_hpf_hz = 24.0f;
+            preset.user.tone_tilt = 0.12f;
+            preset.user.drift_amount = 0.004f;
+            preset.user.sat_asymmetry = 0.0f;
+            preset.user.sat_out_trim = 1.0f;
+            preset.tuning.stage_time_spread = 0.006f;
+            preset.tuning.lamp_hysteresis = 0.012f;
+            preset.tuning.feedback_sat = 0.35f;
+            preset.musical.auto_level_amount = 0.78f;
+            preset.musical.stereo_width = 0.82f;
             preset.lfo_shape = LfoShape::Sine;
             break;
         case VibeVoicing::ClassicChorus:

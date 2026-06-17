@@ -94,6 +94,18 @@ VibeVoicing map_preset(UnivibeParams::Preset p) {
         case UnivibeParams::Preset::classic_vibrato: return VibeVoicing::ClassicVibrato;
         case UnivibeParams::Preset::deep_throb: return VibeVoicing::DeepThrob;
         case UnivibeParams::Preset::modern_wide: return VibeVoicing::ModernWide;
+        case UnivibeParams::Preset::vintage_univibe_chorus: return VibeVoicing::VintageUniVibeChorus;
+        case UnivibeParams::Preset::deep_hendrix_swirl: return VibeVoicing::DeepHendrixSwirl;
+        case UnivibeParams::Preset::trower_lead: return VibeVoicing::TrowerLead;
+        case UnivibeParams::Preset::gentle_clean_vibe: return VibeVoicing::GentleCleanVibe;
+        case UnivibeParams::Preset::wide_stereo_dream: return VibeVoicing::WideStereoDream;
+        case UnivibeParams::Preset::vintage_vibrato: return VibeVoicing::VintageVibrato;
+        case UnivibeParams::Preset::shallow_always_on: return VibeVoicing::ShallowAlwaysOn;
+        case UnivibeParams::Preset::psychedelic_slow_sweep: return VibeVoicing::PsychedelicSlowSweep;
+        case UnivibeParams::Preset::fast_rotary_vibe: return VibeVoicing::FastRotaryVibe;
+        case UnivibeParams::Preset::bass_synth_friendly: return VibeVoicing::BassSynthFriendly;
+        case UnivibeParams::Preset::lo_fi_lamp_drift: return VibeVoicing::LoFiLampDrift;
+        case UnivibeParams::Preset::modern_hifi_phase_vibe: return VibeVoicing::ModernHiFiPhaseVibe;
         case UnivibeParams::Preset::classic_chorus:
         default: return VibeVoicing::ClassicChorus;
     }

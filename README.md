@@ -71,6 +71,18 @@ The `BulbAsym` LFO shape models an asymmetric bulb-like sweep: the rise is sligh
 - Classic Vibrato: 100% wet pitch/phase wobble.
 - Deep Throb: slower, darker, stronger low-mid pulse.
 - Modern Wide: cleaner, wider stereo image with brighter feedback.
+- Vintage Uni-Vibe Chorus: warm liquid chorus with softened highs and classic feedback.
+- Deep Hendrix Swirl: deep, vocal swirl with slower lamp inertia and safe chew.
+- Trower Lead: mid-forward lead voice that keeps attack with drive/fuzz.
+- Gentle Clean Vibe: slow, subtle clean chord movement.
+- Wide Stereo Dream: wide complementary L/R sweep for pads and production.
+- Vintage Vibrato: wet vintage wobble without dominant dry.
+- Shallow Always-On: low-mix movement for an always-on signal lift.
+- Psychedelic Slow Sweep: very slow deep sweep for sustained textures.
+- Fast Rotary-ish Vibe: fast vibe shimmer with moderate depth.
+- Bass/Synth Friendly Vibe: low-feedback voicing that preserves fundamentals.
+- Lo-Fi Lamp Drift: organic asymmetry and lamp drift with mild saturation.
+- Modern Hi-Fi Phase Vibe: clean, stable, controlled modern phase-vibe.
 
 ### Recommended settings
 

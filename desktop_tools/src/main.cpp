@@ -28,7 +28,7 @@ void print_usage() {
         << "  --depth <0..1>            (padrao: 0.78)\n"
         << "  --feedback <0..0.99>      (padrao: 0.34)\n"
         << "  --mix <0..1>              (padrao: 0.48)\n"
-        << "  --preset <classic_chorus|classic_vibrato|deep_throb|modern_wide>\n"
+        << "  --preset <classic_chorus|classic_vibrato|deep_throb|modern_wide|vintage_univibe_chorus|deep_hendrix_swirl|trower_lead|gentle_clean_vibe|wide_stereo_dream|vintage_vibrato|shallow_always_on|psychedelic_slow_sweep|fast_rotary_vibe|bass_synth_friendly|lo_fi_lamp_drift|modern_hifi_phase_vibe>\n"
         << "  --engine <legacy|improved> (padrao: improved)\n"
         << "  --ab <none|difference>    (padrao: none)\n"
         << "  --drive <0.5..6>          (padrao: 3.5)\n"
@@ -133,6 +133,18 @@ int main(int argc, char** argv) {
                 else if (p == "classic_vibrato") params.preset = UnivibeParams::Preset::classic_vibrato;
                 else if (p == "deep_throb") params.preset = UnivibeParams::Preset::deep_throb;
                 else if (p == "modern_wide") params.preset = UnivibeParams::Preset::modern_wide;
+                else if (p == "vintage_univibe_chorus") params.preset = UnivibeParams::Preset::vintage_univibe_chorus;
+                else if (p == "deep_hendrix_swirl") params.preset = UnivibeParams::Preset::deep_hendrix_swirl;
+                else if (p == "trower_lead") params.preset = UnivibeParams::Preset::trower_lead;
+                else if (p == "gentle_clean_vibe") params.preset = UnivibeParams::Preset::gentle_clean_vibe;
+                else if (p == "wide_stereo_dream") params.preset = UnivibeParams::Preset::wide_stereo_dream;
+                else if (p == "vintage_vibrato") params.preset = UnivibeParams::Preset::vintage_vibrato;
+                else if (p == "shallow_always_on") params.preset = UnivibeParams::Preset::shallow_always_on;
+                else if (p == "psychedelic_slow_sweep") params.preset = UnivibeParams::Preset::psychedelic_slow_sweep;
+                else if (p == "fast_rotary_vibe") params.preset = UnivibeParams::Preset::fast_rotary_vibe;
+                else if (p == "bass_synth_friendly") params.preset = UnivibeParams::Preset::bass_synth_friendly;
+                else if (p == "lo_fi_lamp_drift") params.preset = UnivibeParams::Preset::lo_fi_lamp_drift;
+                else if (p == "modern_hifi_phase_vibe") params.preset = UnivibeParams::Preset::modern_hifi_phase_vibe;
                 else throw std::runtime_error("Preset invalido");
             } else if (arg == "--engine") {
                 const std::string e = next();
