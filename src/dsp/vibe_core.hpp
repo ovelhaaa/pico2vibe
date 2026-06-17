@@ -280,6 +280,8 @@ enum class VibeVoicing : uint8_t {
     ModernHiFiPhaseVibe,
 };
 
+static constexpr uint32_t kVibeVoicingCount = static_cast<uint32_t>(VibeVoicing::ModernHiFiPhaseVibe) + 1u;
+
 struct VibePreset {
     VibeVoicing voicing = VibeVoicing::ClassicChorus;
     VibeProfile profile = VibeProfile::Classic;

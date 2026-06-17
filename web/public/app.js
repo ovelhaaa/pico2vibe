@@ -69,6 +69,30 @@ const VOICE_HINTS = {
     "Pulso escuro e lento com low-mid forte, ideal para leads e riffs sustentados.",
   "Modern Wide":
     "Mais hi-fi, estéreo e brilhante para teclas, pads e produção moderna.",
+  "Vintage Uni-Vibe Chorus":
+    "Chorus vintage quente, líquido e psicodélico para riffs limpos e overdrive leve.",
+  "Deep Hendrix Swirl":
+    "Swirl profundo e vocal com feedback mastigado, calibrado para não ressonar demais.",
+  "Trower Lead":
+    "Lead com médios presentes, drive musical e ataque preservado com fuzz antes do efeito.",
+  "Gentle Clean Vibe":
+    "Movimento lento e sutil para arpejos limpos sem desafinar em excesso.",
+  "Wide Stereo Dream":
+    "Imagem L/R larga e complementar para pads, synths e gravação com compatibilidade mono cuidadosa.",
+  "Vintage Vibrato":
+    "Vibrato molhado, escuro e perceptível, sem dry dominante.",
+  "Shallow Always-On":
+    "Animação quase invisível com mix baixo e nível estável para deixar sempre ligado.",
+  "Psychedelic Slow Sweep":
+    "Sweep muito lento e profundo para acordes sustentados e texturas psicodélicas.",
+  "Fast Rotary-ish Vibe":
+    "Vibe rápido inspirado em rotary, com depth moderado e suavização extra.",
+  "Bass/Synth Friendly Vibe":
+    "Baixo feedback, HPF mínimo e headroom para preservar fundamentais de baixo e synth.",
+  "Lo-Fi Lamp Drift":
+    "Assimetria de lâmpada, drift orgânico e saturação suave sem aumentar ruído próprio.",
+  "Modern Hi-Fi Phase Vibe":
+    "Sweep limpo, definido e estável para produção moderna e mixagem.",
 };
 
 const SCENES = {
