@@ -565,6 +565,7 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.musical.stereo_width = 1.18f;
             preset.musical.chorus_notch_depth = 0.72f;
             preset.musical.chorus_stereo_focus = 0.88f;
+            preset.musical.mono_compat = 0.84f;
             preset.feedback_profile = FeedbackProfile::ModernFeedback;
             preset.lfo_shape = LfoShape::Sine;
             break;
@@ -684,6 +685,7 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.musical.stereo_width = 1.22f;
             preset.musical.chorus_notch_depth = 0.70f;
             preset.musical.chorus_stereo_focus = 0.92f;
+            preset.musical.mono_compat = 0.88f;
             preset.lfo_shape = LfoShape::Sine;
             break;
         case VibeVoicing::VintageVibrato:
@@ -777,6 +779,7 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.musical.stereo_width = 0.68f;
             preset.musical.chorus_notch_depth = 0.48f;
             preset.musical.chorus_stereo_focus = 0.62f;
+            preset.musical.mono_compat = 0.72f;
             preset.lfo_shape = LfoShape::Sine;
             break;
         case VibeVoicing::BassSynthFriendly:
@@ -801,6 +804,7 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.musical.stereo_width = 0.36f;
             preset.musical.chorus_notch_depth = 0.30f;
             preset.musical.chorus_stereo_focus = 0.26f;
+            preset.musical.mono_compat = 0.86f;
             preset.lfo_shape = LfoShape::Sine;
             break;
         case VibeVoicing::LoFiLampDrift:
@@ -854,6 +858,7 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.musical.stereo_width = 0.82f;
             preset.musical.chorus_notch_depth = 0.66f;
             preset.musical.chorus_stereo_focus = 0.72f;
+            preset.musical.mono_compat = 0.78f;
             preset.lfo_shape = LfoShape::Sine;
             break;
         case VibeVoicing::ClassicChorus:
@@ -1868,7 +1873,8 @@ void Vibe::out(float *smpsl, float *smpsr) {
     const float auto_level = clampf(params.musical.auto_level_amount, 0.0f, 1.0f);
     const float chorus_notch_depth = mode_chorus ? clampf(params.musical.chorus_notch_depth, 0.0f, 1.25f) : 0.0f;
     const float chorus_stereo_focus = mode_chorus ? clampf(params.musical.chorus_stereo_focus, 0.0f, 1.0f) : 0.0f;
-    const float mono_compat = mode_chorus ? clampf(params.musical.mono_compat, 0.0f, 1.0f) : 0.0f;    constexpr float kInvDefaultLdrCurve = 1.0f / 7.6009f;
+    const float mono_compat = mode_chorus ? clampf(params.musical.mono_compat, 0.0f, 1.0f) : 0.0f;
+    constexpr float kInvDefaultLdrCurve = 1.0f / 7.6009f;
     const float ldr_curve_scale = clampf(params.tuning.ldr_curve, 0.1f, 24.0f) * kInvDefaultLdrCurve;
     const float fb_lim_threshold = 0.78f + 0.06f * (1.0f - auto_level);
     const float fb_lim_floor = 0.30f - 0.08f * (1.0f - auto_level);
@@ -2078,21 +2084,16 @@ void Vibe::out(float *smpsl, float *smpsr) {
         float wet_r = wet_air_r + wet_core_blend * wet_core_r;
         wet_r = wet_antialias_process(wet_r, wet_smooth_coeff, wet_smooth_r);
 
-        // Wet-only mid/side focus adds width while guarding mono fold-down in wide voices.
+        // Wet-only mid/side focus adds width while keeping wide voices useful in mono.
         const float wet_mid = 0.5f * (wet_l + wet_r);
         const float wet_side_raw = 0.5f * (wet_l - wet_r);
         const float side_focus = 1.0f + 0.10f * chorus_stereo_focus * notch_focus;
         const float wide_voice = clampf((stereo_width - 0.70f) * (1.0f / 0.55f), 0.0f, 1.0f);
         const float guard_amount = mono_compat * wide_voice * (0.45f + 0.55f * chorus_stereo_focus);
-        const float wet_side_width = clampf(classic_stereo_reduction * side_focus, 0.0f, 1.25f);
-        const float side_pre_guard = wet_side_raw * wet_side_width;
-        const float side_budget = 0.020f + fabsf(wet_mid) * (1.65f - 0.35f * notch_focus);
-        const float side_limiter = (fabsf(side_pre_guard) > side_budget)
-                                   ? clampf(side_budget / (fabsf(side_pre_guard) + 1.0e-9f), 0.58f, 1.0f)
-                                   : 1.0f;
-        const float wet_side = side_pre_guard * (1.0f + (side_limiter - 1.0f) * guard_amount);
+        const float wet_side_width = clampf(classic_stereo_reduction * side_focus * (1.0f - 0.12f * guard_amount * depth), 0.0f, 1.25f);
+        const float wet_side = wet_side_raw * wet_side_width;
         const float wet_mid_anchor = 1.0f + depth * ((0.045f * chorus_stereo_focus * (0.55f + 0.45f * mix_center))
-                                                     + (0.030f * mono_compat * wide_voice));
+                                                     + (0.035f * mono_compat * wide_voice));
         wet_l = wet_mid * wet_mid_anchor + wet_side;
         wet_r = wet_mid * wet_mid_anchor - wet_side;
 

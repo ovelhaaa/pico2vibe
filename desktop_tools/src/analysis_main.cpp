@@ -349,6 +349,45 @@ void process(UnivibeParams p, StereoBuffer& b) {
     proc.process_in_place(b.left, b.right);
 }
 
+struct StereoImageMetrics {
+    float side_to_mid_db = -120.0f;
+    float mono_fold_db = -120.0f;
+    float lr_correlation = 0.0f;
+};
+
+StereoImageMetrics stereo_image_metrics(const StereoBuffer& b) {
+    const size_t n = std::min(b.left.size(), b.right.size());
+    if (n == 0) return {};
+
+    double l2 = 0.0;
+    double r2 = 0.0;
+    double lr = 0.0;
+    double mid2 = 0.0;
+    double side2 = 0.0;
+    for (size_t i = 0; i < n; ++i) {
+        const double l = static_cast<double>(b.left[i]);
+        const double r = static_cast<double>(b.right[i]);
+        const double mid = 0.5 * (l + r);
+        const double side = 0.5 * (l - r);
+        l2 += l * l;
+        r2 += r * r;
+        lr += l * r;
+        mid2 += mid * mid;
+        side2 += side * side;
+    }
+
+    const double inv_n = 1.0 / static_cast<double>(n);
+    const double mid_rms = std::sqrt(mid2 * inv_n);
+    const double side_rms = std::sqrt(side2 * inv_n);
+    const double stereo_rms = std::sqrt(0.5 * (l2 + r2) * inv_n);
+
+    StereoImageMetrics m;
+    m.side_to_mid_db = static_cast<float>(20.0 * std::log10((side_rms + 1.0e-12) / (mid_rms + 1.0e-12)));
+    m.mono_fold_db = static_cast<float>(20.0 * std::log10((mid_rms + 1.0e-12) / (stereo_rms + 1.0e-12)));
+    m.lr_correlation = static_cast<float>(lr / std::sqrt(std::max(1.0e-24, l2 * r2)));
+    return m;
+}
+
 float rms_window(const std::vector<float>& x, int center, int radius) {
     if (x.empty()) return 0.0f;
     int start = std::max(0, center - radius);
@@ -607,9 +646,18 @@ void run_preset(const std::string& preset_name, const RunConfig& cfg) {
     process(params, guitar_out);
     write_signal_pair(signal_dir, "guitar_like", guitar_in, guitar_out);
 
+    const auto guitar_image = stereo_image_metrics(guitar_out);
+    const auto sweep_image = stereo_image_metrics(sweep_out);
+
     summary["worst_thd_db"] = worst_thd_db;
     summary["guitar_alias_proxy_db"] = high_freq_ratio_db(guitar_out.left, 12000.0f);
     summary["sweep_alias_proxy_db"] = high_freq_ratio_db(sweep_out.left, 12000.0f);
+    summary["guitar_side_to_mid_db"] = guitar_image.side_to_mid_db;
+    summary["guitar_mono_fold_db"] = guitar_image.mono_fold_db;
+    summary["guitar_lr_correlation"] = guitar_image.lr_correlation;
+    summary["sweep_side_to_mid_db"] = sweep_image.side_to_mid_db;
+    summary["sweep_mono_fold_db"] = sweep_image.mono_fold_db;
+    summary["sweep_lr_correlation"] = sweep_image.lr_correlation;
 
     float notch_min_db = 0.0f;
     if (!notch.empty()) {
