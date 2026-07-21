@@ -35,6 +35,8 @@ void print_usage() {
         << "  --condition-output       aplica DC/headroom/limiter compartilhado\n"
         << "  --drive <0.5..6>          (padrao: 3.5)\n"
         << "  --output-gain <0.25..2>   (padrao: 1.0)\n"
+        << "  --stereo-width <0..1.35>  sobrescreve a largura do preset\n"
+        << "  --lamp-lag <0.35..2.5>    multiplica ataque/release da lampada\n"
         << "  --tone-tilt <-1..1>       (padrao: 0.0)\n"
         << "  --pre-hpf <8..160>        (padrao: 22)\n"
         << "  --seed <int>              (padrao: 1)\n"
@@ -170,6 +172,11 @@ int main(int argc, char** argv) {
                 params.input_drive = std::stof(next());
             } else if (arg == "--output-gain") {
                 params.output_gain = std::stof(next());
+            } else if (arg == "--stereo-width") {
+                params.stereo_width = std::stof(next());
+                params.override_stereo_width = true;
+            } else if (arg == "--lamp-lag") {
+                params.lamp_lag = std::stof(next());
             } else if (arg == "--tone-tilt") {
                 params.tone_tilt = std::stof(next());
             } else if (arg == "--pre-hpf") {

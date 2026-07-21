@@ -44,6 +44,9 @@ struct UnivibeParams {
     float mix = 0.48f;
     float input_drive = 3.5f;
     float output_gain = 1.0f;
+    float stereo_width = 0.75f;
+    bool override_stereo_width = false;
+    float lamp_lag = 1.0f;
     float tone_tilt = 0.0f;
     float pre_hpf_hz = 22.0f;
     float sat_asymmetry = 0.08f;

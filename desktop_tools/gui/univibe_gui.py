@@ -16,7 +16,7 @@ class App:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         root.title("Univibe Offline GUI")
-        root.geometry("760x440")
+        root.geometry("760x500")
 
         self.cli_path = tk.StringVar(value=default_cli_path())
         self.input_path = tk.StringVar()
@@ -27,6 +27,8 @@ class App:
         self.depth = tk.StringVar(value="0.78")
         self.feedback = tk.StringVar(value="0.34")
         self.mix = tk.StringVar(value="0.48")
+        self.stereo_width = tk.StringVar(value="")
+        self.lamp_lag = tk.StringVar(value="1.0")
 
         frm = ttk.Frame(root, padding=12)
         frm.pack(fill=tk.BOTH, expand=True)
@@ -41,18 +43,20 @@ class App:
         self._row_entry(frm, 6, "Depth", self.depth)
         self._row_entry(frm, 7, "Feedback", self.feedback)
         self._row_entry(frm, 8, "Mix", self.mix)
+        self._row_entry(frm, 9, "Stereo width (opcional)", self.stereo_width)
+        self._row_entry(frm, 10, "Lamp lag", self.lamp_lag)
 
         btns = ttk.Frame(frm)
-        btns.grid(row=10, column=0, columnspan=3, sticky="w", pady=(14, 8))
+        btns.grid(row=12, column=0, columnspan=3, sticky="w", pady=(14, 8))
 
         ttk.Button(btns, text="Processar", command=self.process).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(btns, text="Ouvir saida", command=self.play_output).pack(side=tk.LEFT)
 
         self.log = tk.Text(frm, height=9)
-        self.log.grid(row=11, column=0, columnspan=3, sticky="nsew")
+        self.log.grid(row=13, column=0, columnspan=3, sticky="nsew")
 
         frm.grid_columnconfigure(1, weight=1)
-        frm.grid_rowconfigure(11, weight=1)
+        frm.grid_rowconfigure(13, weight=1)
 
     def _row_file(self, parent, row, label, var, cmd):
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=(0, 10), pady=4)
@@ -110,7 +114,12 @@ class App:
             "--depth", self.depth.get().strip(),
             "--feedback", self.feedback.get().strip(),
             "--mix", self.mix.get().strip(),
+            "--lamp-lag", self.lamp_lag.get().strip(),
         ]
+
+        stereo_width = self.stereo_width.get().strip()
+        if stereo_width:
+            cmd.extend(["--stereo-width", stereo_width])
 
         self._append_log("$ " + " ".join(cmd))
 

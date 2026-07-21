@@ -149,6 +149,10 @@ struct DesktopUnivibeProcessor::Impl {
         improved->set_param(VibeParamId::LfoRateHz, p.rate_hz);
         improved->set_param(VibeParamId::InputDrive, p.input_drive);
         improved->set_param(VibeParamId::OutputGain, p.output_gain);
+        if (p.override_stereo_width) {
+            improved->set_param(VibeParamId::StereoWidth, p.stereo_width);
+        }
+        improved->set_param(VibeParamId::LampLag, p.lamp_lag);
         improved->set_param(VibeParamId::ToneTilt, p.tone_tilt);
         improved->set_param(VibeParamId::PreHpfHz, p.pre_hpf_hz);
         improved->set_param(VibeParamId::SatAsymmetry, p.sat_asymmetry);
@@ -166,6 +170,8 @@ struct DesktopUnivibeProcessor::Impl {
             legacy->params.musical.auto_level_amount = 1.0f;
             legacy->params.musical.stereo_width = 1.0f;
             legacy->params.legacy_saturation = true;
+            legacy->set_param(VibeParamId::StereoWidth, 1.0f);
+            legacy->set_param(VibeParamId::LampLag, p.lamp_lag);
             legacy->set_param(VibeParamId::Depth, p.depth);
             legacy->set_param(VibeParamId::Feedback, p.feedback);
             legacy->set_param(VibeParamId::Mix, p.mix);
@@ -207,6 +213,12 @@ DesktopUnivibeProcessor::DesktopUnivibeProcessor(const UnivibeParams& params) {
     }
     if (params.mix < 0.0f || params.mix > 1.0f) {
         throw std::runtime_error("mix fora do intervalo [0..1]");
+    }
+    if (params.override_stereo_width && (params.stereo_width < 0.0f || params.stereo_width > 1.35f)) {
+        throw std::runtime_error("stereo_width fora do intervalo [0..1.35]");
+    }
+    if (params.lamp_lag < 0.35f || params.lamp_lag > 2.50f) {
+        throw std::runtime_error("lamp_lag fora do intervalo [0.35..2.50]");
     }
 
     impl_ = new Impl(params);

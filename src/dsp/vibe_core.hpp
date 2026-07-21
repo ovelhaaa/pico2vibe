@@ -209,11 +209,13 @@ struct VibeUserParams {
     float mix = 0.50f;
     float input_drive = 2.3f;
     float output_gain = 1.0f;
+    float stereo_width = 0.75f;
     float sweep_min = 0.58f;
     float sweep_max = 0.98f;
     float lfo_rate_hz = 1.20f;
     float drift_amount = 0.018f;
     float drift_rate_hz = 0.08f;
+    float lamp_lag = 1.0f;
     float pre_hpf_hz = 22.0f;
     float tone_tilt = 0.0f;
     float sat_asymmetry = 0.04f;
@@ -398,6 +400,8 @@ enum class VibeParamId : uint8_t {
     ToneTilt,
     SatAsymmetry,
     SatOutTrim,
+    StereoWidth,
+    LampLag,
 };
 
 struct VibeParamSpec {
@@ -422,6 +426,8 @@ static inline VibeParamSpec vibe_param_spec(VibeParamId id) {
         case VibeParamId::ToneTilt:   return {-1.0f, 1.0f, 0.0f};
         case VibeParamId::SatAsymmetry:return {-0.25f, 0.25f, 0.04f};
         case VibeParamId::SatOutTrim: return {0.60f, 1.20f, 0.82f};
+        case VibeParamId::StereoWidth:return {0.0f, 1.35f, 0.75f};
+        case VibeParamId::LampLag:    return {0.35f, 2.50f, 1.0f};
         default:                      return {0.0f, 1.0f, 0.0f};
     }
 }
@@ -442,6 +448,8 @@ static inline float *vibe_param_slot(VibeUserParams &params, VibeParamId id) {
         case VibeParamId::ToneTilt:    return &params.tone_tilt;
         case VibeParamId::SatAsymmetry:return &params.sat_asymmetry;
         case VibeParamId::SatOutTrim:  return &params.sat_out_trim;
+        case VibeParamId::StereoWidth: return &params.stereo_width;
+        case VibeParamId::LampLag:     return &params.lamp_lag;
         default:                       return nullptr;
     }
 }
@@ -462,6 +470,8 @@ static inline const float *vibe_param_slot(const VibeUserParams &params, VibePar
         case VibeParamId::ToneTilt:    return &params.tone_tilt;
         case VibeParamId::SatAsymmetry:return &params.sat_asymmetry;
         case VibeParamId::SatOutTrim:  return &params.sat_out_trim;
+        case VibeParamId::StereoWidth: return &params.stereo_width;
+        case VibeParamId::LampLag:     return &params.lamp_lag;
         default:                       return nullptr;
     }
 }
@@ -472,11 +482,13 @@ static inline void sanitize_user_params(VibeUserParams *params) {
     params->mix = clampf(params->mix, 0.0f, 1.0f);
     params->input_drive = clampf(params->input_drive, 0.5f, 6.0f);
     params->output_gain = clampf(params->output_gain, 0.25f, 2.0f);
+    params->stereo_width = clampf(params->stereo_width, 0.0f, 1.35f);
     params->sweep_min = clampf(params->sweep_min, 0.0f, 1.0f);
     params->sweep_max = clampf(params->sweep_max, params->sweep_min, 1.0f);
     params->lfo_rate_hz = clampf(params->lfo_rate_hz, kLfoRateMinHz, kLfoRateMaxHz);
     params->drift_amount = clampf(params->drift_amount, 0.0f, 0.05f);
     params->drift_rate_hz = clampf(params->drift_rate_hz, 0.005f, 0.5f);
+    params->lamp_lag = clampf(params->lamp_lag, 0.35f, 2.50f);
     params->pre_hpf_hz = clampf(params->pre_hpf_hz, 8.0f, 160.0f);
     params->tone_tilt = clampf(params->tone_tilt, -1.0f, 1.0f);
     params->sat_asymmetry = clampf(params->sat_asymmetry, -0.25f, 0.25f);
@@ -881,6 +893,7 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
     }
 
     apply_profile_to_preset(&preset);
+    preset.user.stereo_width = preset.musical.stereo_width;
     sanitize_user_params(&preset.user);
     return preset;
 }
@@ -937,7 +950,7 @@ public:
         drift_lfo_phase = 0.0f;
     }
 
-    void processSample(float *l, float *r, const VibeUserParams &user, const VibeTuningParams &tuning, const VibeMusicalParams &musical, LfoShape shape, VibeProfile profile, float drift_alpha, float smoothing, float inv_sample_rate) {
+    void processSample(float *l, float *r, const VibeUserParams &user, const VibeTuningParams &tuning, LfoShape shape, VibeProfile profile, float drift_alpha, float smoothing, float inv_sample_rate) {
         const float freq = clampf(user.lfo_rate_hz, kLfoRateMinHz, kLfoRateMaxHz);
         const float drift_amount = clampf(user.drift_amount, 0.0f, 0.05f);
         const float drift_rate_hz = clampf(user.drift_rate_hz, 0.005f, 0.5f);
@@ -954,7 +967,7 @@ public:
         if (phase >= 1.0f) phase -= 1.0f;
 
         const float stereo_scale = (profile == VibeProfile::Modern) ? 1.06f : 0.92f;
-        const float width = clampf(musical.stereo_width, 0.0f, 1.35f);
+        const float width = clampf(user.stereo_width, 0.0f, 1.35f);
         float p_r = phase + clampf(tuning.stereo_phase_offset * stereo_scale * width, -0.5f, 0.5f);
         if (p_r < 0.0f) p_r += 1.0f;
         if (p_r >= 1.0f) p_r -= 1.0f;
@@ -1413,8 +1426,9 @@ float Vibe::vibefilter(float data, fparams *ftype) {
 }
 
 void Vibe::update_time_constants() {
-    const float attack_sec = clampf(params.tuning.lamp_attack_sec, 0.001f, 0.250f);
-    const float release_sec = clampf(params.tuning.lamp_release_sec, 0.001f, 0.500f);
+    const float lag = clampf(smoothed_user.lamp_lag, 0.35f, 2.50f);
+    const float attack_sec = clampf(params.tuning.lamp_attack_sec * lag, 0.001f, 0.250f);
+    const float release_sec = clampf(params.tuning.lamp_release_sec * lag, 0.001f, 0.500f);
 
     lamp_attack = 1.0f - expf(-inv_sample_rate / attack_sec);
     lamp_release = 1.0f - expf(-inv_sample_rate / release_sec);
@@ -1518,11 +1532,13 @@ void Vibe::update_smoothed_user_params() {
     smooth_to_target(smoothed_user.mix, params.user.mix);
     smooth_to_target(smoothed_user.input_drive, params.user.input_drive);
     smooth_to_target(smoothed_user.output_gain, params.user.output_gain);
+    smooth_to_target(smoothed_user.stereo_width, params.user.stereo_width);
     smooth_to_target(smoothed_user.sweep_min, params.user.sweep_min);
     smooth_to_target(smoothed_user.sweep_max, params.user.sweep_max);
     smooth_to_target(smoothed_user.lfo_rate_hz, params.user.lfo_rate_hz);
     smooth_to_target(smoothed_user.drift_amount, params.user.drift_amount);
     smooth_to_target(smoothed_user.drift_rate_hz, params.user.drift_rate_hz);
+    smooth_to_target(smoothed_user.lamp_lag, params.user.lamp_lag);
     smooth_to_target(smoothed_user.pre_hpf_hz, params.user.pre_hpf_hz);
     smooth_to_target(smoothed_user.tone_tilt, params.user.tone_tilt);
     smooth_to_target(smoothed_user.sat_asymmetry, params.user.sat_asymmetry);
@@ -1841,9 +1857,9 @@ float Vibe::allpass_phase_network_process(float x, int first_stage, float coeff_
 }
 
 void Vibe::out(float *smpsl, float *smpsr) {
-    update_time_constants();
     const VibeUserParams prev = smoothed_user;
     update_smoothed_user_params();
+    update_time_constants();
     // Invariant: stage integrator state is always bounded by tuning to avoid runaway poles.
     const float stage_limit = clampf(params.tuning.stage_state_limit, 2.0f, 12.0f);
     // Invariant: per-sample coefficients below are block constants; avoid recomputing transcendental math.
@@ -1889,7 +1905,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
     const bool classic_profile = (params.profile == VibeProfile::Classic);
     const bool classic_chorus_profile = mode_chorus && classic_profile && (params.voicing == VibeVoicing::ClassicChorus);
     const float profile_stereo_reduction = classic_chorus_profile ? 0.88f : (classic_profile ? 0.93f : 1.06f);
-    const float stereo_width = clampf(params.musical.stereo_width, 0.0f, 1.35f);
+    const float stereo_width = clampf(smoothed_user.stereo_width, 0.0f, 1.35f);
     const float classic_stereo_reduction = clampf(profile_stereo_reduction * stereo_width, 0.0f, 1.35f);
     const float ldr_coeff_alpha = 1.0f - expf(-inv_sample_rate / clampf(VIBE_LDR_COEFF_SMOOTH_TAU_SEC, 0.0005f, 0.005f));
     const float wet_smooth_base_hz = (params.profile == VibeProfile::Modern) ? 7200.0f : 5400.0f;
@@ -1905,7 +1921,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
         smoothed_user.sat_out_trim = sat_trim_ramp.tick();
 
         float lfol = 0.0f, lfor = 0.0f;
-        lfo.processSample(&lfol, &lfor, smoothed_user, params.tuning, params.musical, params.lfo_shape, params.profile, drift_alpha, lfo_smoothing, inv_sample_rate);
+        lfo.processSample(&lfol, &lfor, smoothed_user, params.tuning, params.lfo_shape, params.profile, drift_alpha, lfo_smoothing, inv_sample_rate);
 
         const float depth = depth_ramp.tick();
         const float sweep_min = sweep_min_ramp.tick();

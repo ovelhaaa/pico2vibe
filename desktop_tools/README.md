@@ -37,7 +37,7 @@ build/desktop_tools/univibe_cli.exe ^
   --mode chorus ^
   --rate 1.2 ^
   --depth 0.6 ^
-  --width 0.8 ^
+  --stereo-width 0.8 ^
   --feedback 0.45 ^
   --seed 1 ^
   --wav-format pcm16
@@ -45,6 +45,11 @@ build/desktop_tools/univibe_cli.exe ^
 
 Entrada aceita WAV; para MP3 usa `ffmpeg` se estiver no PATH.
 Saida recomendada: `--wav-format pcm16` (mais compatível).
+
+Controles sonoros úteis para calibração pré-VST:
+
+- `--stereo-width <0..1.35>` sobrescreve a largura estéreo calibrada pelo preset.
+- `--lamp-lag <0.35..2.5>` multiplica a inércia óptica de ataque/release da lâmpada.
 
 ## Harness de validação offline (`dsp_validate`)
 

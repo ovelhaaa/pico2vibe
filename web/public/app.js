@@ -22,11 +22,13 @@ const PARAM_COPY = {
   mix: ["Mix", "Equilíbrio dry/wet"],
   input_drive: ["Input drive", "Saturação antes do vibe"],
   output_gain: ["Output gain", "Compensação final"],
+  stereo_width: ["Stereo width", "Abertura L/R do voicing"],
   sweep_min: ["Sweep min", "Extremo grave do LFO"],
   sweep_max: ["Sweep max", "Extremo agudo do LFO"],
   lfo_rate_hz: ["Rate", "Velocidade em Hz"],
   drift_amount: ["Drift amount", "Instabilidade orgânica"],
   drift_rate_hz: ["Drift rate", "Velocidade do drift"],
+  lamp_lag: ["Lamp lag", "Inércia óptica ataque/release"],
   pre_hpf_hz: ["Pre HPF", "Limpa graves antes do circuito"],
   tone_tilt: ["Tone tilt", "Inclinação claro/escuro"],
   sat_asymmetry: ["Sat asymmetry", "Assimetria tipo transistor"],
@@ -44,7 +46,7 @@ const GROUPS = [
     id: "blend",
     title: "Blend e ressonância",
     accent: "#a78bfa",
-    params: ["mix", "feedback"],
+    params: ["mix", "feedback", "stereo_width"],
   },
   {
     id: "tone",
@@ -56,7 +58,7 @@ const GROUPS = [
     id: "analog",
     title: "Caráter analógico",
     accent: "#fb7185",
-    params: ["drift_amount", "drift_rate_hz", "sat_asymmetry", "sat_out_trim"],
+    params: ["drift_amount", "drift_rate_hz", "lamp_lag", "sat_asymmetry", "sat_out_trim"],
   },
 ];
 
@@ -104,6 +106,8 @@ const SCENES = {
       mix: 0.52,
       feedback: 0.34,
       input_drive: 1.25,
+      stereo_width: 0.55,
+      lamp_lag: 1.05,
       tone_tilt: -0.08,
     },
   },
@@ -115,6 +119,8 @@ const SCENES = {
       mix: 0.62,
       feedback: 0.48,
       input_drive: 1.55,
+      stereo_width: 0.70,
+      lamp_lag: 1.25,
       tone_tilt: -0.18,
     },
   },
@@ -126,6 +132,8 @@ const SCENES = {
       mix: 0.58,
       feedback: 0.22,
       input_drive: 1.05,
+      stereo_width: 1.18,
+      lamp_lag: 0.85,
       tone_tilt: 0.18,
     },
   },
@@ -171,6 +179,7 @@ function sliderValueForParam(param) {
 function formatParamValue(name, value) {
   if (name === "lfo_rate_hz") return `${value.toFixed(2)} Hz`;
   if (name === "pre_hpf_hz") return `${value.toFixed(1)} Hz`;
+  if (name === "lamp_lag") return `${value.toFixed(2)}x`;
   return value.toFixed(3);
 }
 
