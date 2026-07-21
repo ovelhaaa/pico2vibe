@@ -1,3 +1,0 @@
-C:/progs/pico/pico2vibe/build/rp2350-zero-no-ui/_deps/picotool-subbuild/CMakeFiles/picotool-populate.dir
-C:/progs/pico/pico2vibe/build/rp2350-zero-no-ui/_deps/picotool-subbuild/CMakeFiles/edit_cache.dir
-C:/progs/pico/pico2vibe/build/rp2350-zero-no-ui/_deps/picotool-subbuild/CMakeFiles/rebuild_cache.dir

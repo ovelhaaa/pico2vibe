@@ -1,4 +1,0 @@
-C:/progs/pico/pico2vibe/build/desktop_tools/CMakeFiles/generate_vibe_dsp.dir
-C:/progs/pico/pico2vibe/build/desktop_tools/CMakeFiles/univibe_cli.dir
-C:/progs/pico/pico2vibe/build/desktop_tools/CMakeFiles/edit_cache.dir
-C:/progs/pico/pico2vibe/build/desktop_tools/CMakeFiles/rebuild_cache.dir

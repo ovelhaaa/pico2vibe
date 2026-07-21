@@ -1,0 +1,19 @@
+# CMake/build output
+/build/
+/cmake-build-*/
+
+# Local nested workspace accidentally created by tooling
+/pico2vibe/
+
+# Python/cache output
+__pycache__/
+*.py[cod]
+
+# Local DSP analysis/output artifacts
+/analysis_out/
+/desktop_tools/analysis_out/
+/desktop_tools/diag_*.wav
+/desktop_tools/test_*.wav
+/desktop_tools/test_out.wav
+/desktop_tools/test_fix_out.wav
+/desktop_tools/*.log
