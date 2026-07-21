@@ -294,6 +294,8 @@ static inline float ldr_resistance_from_brightness(float brightness, const VibeT
 struct VibeMusicalParams {
     float auto_level_amount = 0.65f;
     float stereo_width = 0.75f;
+    float chorus_notch_depth = 0.78f;
+    float chorus_stereo_focus = 0.55f;
 };
 
 enum class LfoShape : uint8_t {
@@ -523,6 +525,8 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.user.lfo_rate_hz = 1.10f;
             preset.musical.auto_level_amount = 0.30f;
             preset.musical.stereo_width = 0.55f;
+            preset.musical.chorus_notch_depth = 0.0f;
+            preset.musical.chorus_stereo_focus = 0.0f;
             preset.lfo_shape = LfoShape::BulbAsym;
             break;
         case VibeVoicing::DeepThrob:
@@ -539,6 +543,8 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.feedback_profile = FeedbackProfile::ClassicFeedback;
             preset.musical.auto_level_amount = 0.30f;
             preset.musical.stereo_width = 0.62f;
+            preset.musical.chorus_notch_depth = 1.05f;
+            preset.musical.chorus_stereo_focus = 0.46f;
             preset.lfo_shape = LfoShape::BulbAsym;
             break;
         case VibeVoicing::ModernWide:
@@ -556,6 +562,8 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.tuning.stereo_phase_offset = 0.31f;
             preset.musical.auto_level_amount = 0.70f;
             preset.musical.stereo_width = 1.18f;
+            preset.musical.chorus_notch_depth = 0.72f;
+            preset.musical.chorus_stereo_focus = 0.88f;
             preset.feedback_profile = FeedbackProfile::ModernFeedback;
             preset.lfo_shape = LfoShape::Sine;
             break;
@@ -579,6 +587,8 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.tuning.lamp_hysteresis = 0.026f;
             preset.musical.auto_level_amount = 0.38f;
             preset.musical.stereo_width = 0.42f;
+            preset.musical.chorus_notch_depth = 0.88f;
+            preset.musical.chorus_stereo_focus = 0.32f;
             preset.lfo_shape = LfoShape::BulbAsym;
             break;
         case VibeVoicing::DeepHendrixSwirl:
@@ -603,6 +613,8 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.tuning.feedback_sat = 0.66f;
             preset.musical.auto_level_amount = 0.34f;
             preset.musical.stereo_width = 0.70f;
+            preset.musical.chorus_notch_depth = 1.06f;
+            preset.musical.chorus_stereo_focus = 0.52f;
             preset.lfo_shape = LfoShape::BulbAsym;
             break;
         case VibeVoicing::TrowerLead:
@@ -625,6 +637,8 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.tuning.feedback_sat = 0.62f;
             preset.musical.auto_level_amount = 0.45f;
             preset.musical.stereo_width = 0.50f;
+            preset.musical.chorus_notch_depth = 0.90f;
+            preset.musical.chorus_stereo_focus = 0.38f;
             preset.lfo_shape = LfoShape::BulbAsym;
             break;
         case VibeVoicing::GentleCleanVibe:
@@ -645,6 +659,8 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.user.sat_out_trim = 1.0f;
             preset.musical.auto_level_amount = 0.58f;
             preset.musical.stereo_width = 0.44f;
+            preset.musical.chorus_notch_depth = 0.34f;
+            preset.musical.chorus_stereo_focus = 0.30f;
             preset.lfo_shape = LfoShape::Sine;
             break;
         case VibeVoicing::WideStereoDream:
@@ -665,6 +681,8 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.tuning.stereo_phase_offset = 0.38f;
             preset.musical.auto_level_amount = 0.72f;
             preset.musical.stereo_width = 1.22f;
+            preset.musical.chorus_notch_depth = 0.70f;
+            preset.musical.chorus_stereo_focus = 0.92f;
             preset.lfo_shape = LfoShape::Sine;
             break;
         case VibeVoicing::VintageVibrato:
@@ -684,6 +702,8 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.user.sat_asymmetry = 0.04f;
             preset.musical.auto_level_amount = 0.28f;
             preset.musical.stereo_width = 0.35f;
+            preset.musical.chorus_notch_depth = 0.0f;
+            preset.musical.chorus_stereo_focus = 0.0f;
             preset.lfo_shape = LfoShape::BulbAsym;
             break;
         case VibeVoicing::ShallowAlwaysOn:
@@ -705,6 +725,8 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.user.sat_out_trim = 1.0f;
             preset.musical.auto_level_amount = 0.50f;
             preset.musical.stereo_width = 0.32f;
+            preset.musical.chorus_notch_depth = 0.24f;
+            preset.musical.chorus_stereo_focus = 0.24f;
             preset.lfo_shape = LfoShape::Sine;
             break;
         case VibeVoicing::PsychedelicSlowSweep:
@@ -729,6 +751,8 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.tuning.feedback_sat = 0.70f;
             preset.musical.auto_level_amount = 0.32f;
             preset.musical.stereo_width = 0.76f;
+            preset.musical.chorus_notch_depth = 1.08f;
+            preset.musical.chorus_stereo_focus = 0.56f;
             preset.lfo_shape = LfoShape::BulbAsym;
             break;
         case VibeVoicing::FastRotaryVibe:
@@ -750,6 +774,8 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.tuning.control_smoothing_hz = 26.0f;
             preset.musical.auto_level_amount = 0.68f;
             preset.musical.stereo_width = 0.68f;
+            preset.musical.chorus_notch_depth = 0.48f;
+            preset.musical.chorus_stereo_focus = 0.62f;
             preset.lfo_shape = LfoShape::Sine;
             break;
         case VibeVoicing::BassSynthFriendly:
@@ -772,6 +798,8 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.tuning.stereo_phase_offset = 0.18f;
             preset.musical.auto_level_amount = 0.62f;
             preset.musical.stereo_width = 0.36f;
+            preset.musical.chorus_notch_depth = 0.30f;
+            preset.musical.chorus_stereo_focus = 0.26f;
             preset.lfo_shape = LfoShape::Sine;
             break;
         case VibeVoicing::LoFiLampDrift:
@@ -797,6 +825,8 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.tuning.lfo_shape_smoothing = 0.16f;
             preset.musical.auto_level_amount = 0.36f;
             preset.musical.stereo_width = 0.58f;
+            preset.musical.chorus_notch_depth = 0.76f;
+            preset.musical.chorus_stereo_focus = 0.44f;
             preset.lfo_shape = LfoShape::BulbAsym;
             break;
         case VibeVoicing::ModernHiFiPhaseVibe:
@@ -821,6 +851,8 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
             preset.tuning.feedback_sat = 0.35f;
             preset.musical.auto_level_amount = 0.78f;
             preset.musical.stereo_width = 0.82f;
+            preset.musical.chorus_notch_depth = 0.66f;
+            preset.musical.chorus_stereo_focus = 0.72f;
             preset.lfo_shape = LfoShape::Sine;
             break;
         case VibeVoicing::ClassicChorus:
@@ -1833,6 +1865,8 @@ void Vibe::out(float *smpsl, float *smpsr) {
     const float smooth_hz = (4.0f + 120.0f * clampf(params.tuning.lfo_shape_smoothing, 0.01f, 1.0f)) * profile_smooth_scale;
     const float lfo_smoothing = 1.0f - expf(-2.0f * kPi * smooth_hz * inv_sample_rate);
     const float auto_level = clampf(params.musical.auto_level_amount, 0.0f, 1.0f);
+    const float chorus_notch_depth = mode_chorus ? clampf(params.musical.chorus_notch_depth, 0.0f, 1.25f) : 0.0f;
+    const float chorus_stereo_focus = mode_chorus ? clampf(params.musical.chorus_stereo_focus, 0.0f, 1.0f) : 0.0f;
     constexpr float kInvDefaultLdrCurve = 1.0f / 7.6009f;
     const float ldr_curve_scale = clampf(params.tuning.ldr_curve, 0.1f, 24.0f) * kInvDefaultLdrCurve;
     const float fb_lim_threshold = 0.78f + 0.06f * (1.0f - auto_level);
@@ -1933,8 +1967,13 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float output_gain = gain_ramp.tick();
         const float pre_hpf_hz = pre_hpf_ramp.tick();
         const float tone_tilt = tone_tilt_ramp.tick();
-        const float wet_gain = fast_sqrt01(mix);
-        const float dry_gain = fast_sqrt01(1.0f - mix);
+        const float mix_center = 4.0f * mix * (1.0f - mix);
+        const float notch_focus = clampf(chorus_notch_depth * depth * mix_center, 0.0f, 1.15f);
+        const float wet_gain_raw = fast_sqrt01(mix) * (1.0f + 0.18f * notch_focus);
+        const float dry_gain_raw = fast_sqrt01(1.0f - mix) * (1.0f - 0.055f * notch_focus * mix);
+        const float mix_power_norm = mode_chorus ? (1.0f / sqrtf(fmaxf(0.20f, dry_gain_raw * dry_gain_raw + wet_gain_raw * wet_gain_raw))) : 1.0f;
+        const float wet_gain = wet_gain_raw * mix_power_norm;
+        const float dry_gain = dry_gain_raw * mix_power_norm;
         const float stress = 0.55f * clampf((input_drive - 0.5f) / 5.5f, 0.0f, 1.0f)
                            + 0.18f * clampf(feedback / 0.70f, 0.0f, 1.0f)
                            + 0.27f * mix * mix;
@@ -2038,11 +2077,14 @@ void Vibe::out(float *smpsl, float *smpsr) {
         float wet_r = wet_air_r + wet_core_blend * wet_core_r;
         wet_r = wet_antialias_process(wet_r, wet_smooth_coeff, wet_smooth_r);
 
-        // Light stereo narrowing for classic chorus voicing to keep the image closer to vintage behavior.
+        // Wet-only mid/side focus adds width while keeping a mono anchor for chorus notches.
         const float wet_mid = 0.5f * (wet_l + wet_r);
-        const float wet_side = 0.5f * (wet_l - wet_r) * classic_stereo_reduction;
-        wet_l = wet_mid + wet_side;
-        wet_r = wet_mid - wet_side;
+        const float side_focus = 1.0f + 0.10f * chorus_stereo_focus * notch_focus;
+        const float wet_side_width = clampf(classic_stereo_reduction * side_focus, 0.0f, 1.25f);
+        const float wet_side = 0.5f * (wet_l - wet_r) * wet_side_width;
+        const float wet_mid_anchor = 1.0f + 0.045f * chorus_stereo_focus * depth * (0.55f + 0.45f * mix_center);
+        wet_l = wet_mid * wet_mid_anchor + wet_side;
+        wet_r = wet_mid * wet_mid_anchor - wet_side;
 
         // Cheap one-pole wet energy estimator + bounded wet compensation driven by depth.
         const float wet_energy_l = wet_l * wet_l;
