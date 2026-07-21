@@ -50,6 +50,7 @@ Controles sonoros úteis para calibração pré-VST:
 
 - `--stereo-width <0..1.35>` sobrescreve a largura estéreo calibrada pelo preset.
 - `--lamp-lag <0.35..2.5>` multiplica a inércia óptica de ataque/release da lâmpada.
+- `--tempo-sync --tempo-bpm <30..300> --tempo-division-beats <0.25..16>` sincroniza o LFO por BPM, usando beats por ciclo.
 
 ## Harness de validação offline (`dsp_validate`)
 
@@ -76,6 +77,14 @@ build/desktop_tools/dsp_validate.exe ^
   --out-dir analysis/new ^
   --preset classic ^
   --preset deep
+
+build/desktop_tools/dsp_validate.exe ^
+  --out-dir analysis/synced ^
+  --preset stereo ^
+  --quality high ^
+  --tempo-sync ^
+  --tempo-bpm 96 ^
+  --tempo-division-beats 2
 ```
 
 ### Exemplo A/B (old vs new)

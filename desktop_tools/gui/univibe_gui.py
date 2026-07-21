@@ -16,7 +16,7 @@ class App:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         root.title("Univibe Offline GUI")
-        root.geometry("760x500")
+        root.geometry("760x560")
 
         self.cli_path = tk.StringVar(value=default_cli_path())
         self.input_path = tk.StringVar()
@@ -29,6 +29,9 @@ class App:
         self.mix = tk.StringVar(value="0.48")
         self.stereo_width = tk.StringVar(value="")
         self.lamp_lag = tk.StringVar(value="1.0")
+        self.tempo_sync = tk.StringVar(value="off")
+        self.tempo_bpm = tk.StringVar(value="120")
+        self.tempo_division_beats = tk.StringVar(value="1.0")
 
         frm = ttk.Frame(root, padding=12)
         frm.pack(fill=tk.BOTH, expand=True)
@@ -45,18 +48,21 @@ class App:
         self._row_entry(frm, 8, "Mix", self.mix)
         self._row_entry(frm, 9, "Stereo width (opcional)", self.stereo_width)
         self._row_entry(frm, 10, "Lamp lag", self.lamp_lag)
+        self._row_entry(frm, 11, "Tempo sync", self.tempo_sync, combo=True, values=["off", "on"])
+        self._row_entry(frm, 12, "Tempo BPM", self.tempo_bpm)
+        self._row_entry(frm, 13, "Tempo beats/ciclo", self.tempo_division_beats)
 
         btns = ttk.Frame(frm)
-        btns.grid(row=12, column=0, columnspan=3, sticky="w", pady=(14, 8))
+        btns.grid(row=15, column=0, columnspan=3, sticky="w", pady=(14, 8))
 
         ttk.Button(btns, text="Processar", command=self.process).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(btns, text="Ouvir saida", command=self.play_output).pack(side=tk.LEFT)
 
         self.log = tk.Text(frm, height=9)
-        self.log.grid(row=13, column=0, columnspan=3, sticky="nsew")
+        self.log.grid(row=16, column=0, columnspan=3, sticky="nsew")
 
         frm.grid_columnconfigure(1, weight=1)
-        frm.grid_rowconfigure(13, weight=1)
+        frm.grid_rowconfigure(16, weight=1)
 
     def _row_file(self, parent, row, label, var, cmd):
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=(0, 10), pady=4)
@@ -120,6 +126,10 @@ class App:
         stereo_width = self.stereo_width.get().strip()
         if stereo_width:
             cmd.extend(["--stereo-width", stereo_width])
+        if self.tempo_sync.get().strip() == "on":
+            cmd.append("--tempo-sync")
+            cmd.extend(["--tempo-bpm", self.tempo_bpm.get().strip()])
+            cmd.extend(["--tempo-division-beats", self.tempo_division_beats.get().strip()])
 
         self._append_log("$ " + " ".join(cmd))
 

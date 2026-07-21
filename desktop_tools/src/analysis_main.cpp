@@ -32,6 +32,9 @@ struct RunConfig {
     float impulse_seconds = 1.0f;
     fs::path compare_to;
     UnivibeParams::QualityMode quality_mode = UnivibeParams::QualityMode::standard;
+    bool tempo_sync = false;
+    float tempo_bpm = 120.0f;
+    float tempo_division_beats = 1.0f;
 };
 
 struct FreqPoint {
@@ -51,6 +54,9 @@ void usage() {
         << "  --sweep-seconds <seg>          Duracao do sweep (padrao: 8)\n"
         << "  --compare-to <pasta>           Pasta de baseline para gerar diff de summary\n"
         << "  --quality <eco|standard|high>  Qualidade do DSP (padrao: standard)\n"
+        << "  --tempo-sync                   Sincroniza LFO ao BPM/divisao\n"
+        << "  --tempo-bpm <30..300>          BPM usado com --tempo-sync\n"
+        << "  --tempo-division-beats <0.25..16> Beats por ciclo do LFO\n"
         << "  --help\n\n"
         << "Exemplo:\n"
         << "  dsp_validate --out-dir out/new --preset classic --preset deep\n"
@@ -595,6 +601,9 @@ void write_signal_pair(const fs::path& dir,
 void run_preset(const std::string& preset_name, const RunConfig& cfg) {
     UnivibeParams params = preset_params(preset_name);
     params.quality_mode = cfg.quality_mode;
+    params.tempo_sync = cfg.tempo_sync;
+    params.tempo_bpm = cfg.tempo_bpm;
+    params.tempo_division_beats = cfg.tempo_division_beats;
     const fs::path root = cfg.out_dir / preset_name;
     const fs::path signal_dir = root / "signals";
     const fs::path metric_dir = root / "metrics";
@@ -702,6 +711,12 @@ RunConfig parse_args(int argc, char** argv) {
             cfg.compare_to = next();
         } else if (arg == "--quality") {
             cfg.quality_mode = parse_quality(next());
+        } else if (arg == "--tempo-sync") {
+            cfg.tempo_sync = true;
+        } else if (arg == "--tempo-bpm") {
+            cfg.tempo_bpm = std::stof(next());
+        } else if (arg == "--tempo-division-beats") {
+            cfg.tempo_division_beats = std::stof(next());
         } else {
             throw std::runtime_error("Argumento desconhecido: " + arg);
         }

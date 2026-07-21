@@ -26,6 +26,9 @@ const PARAM_COPY = {
   sweep_min: ["Sweep min", "Extremo grave do LFO"],
   sweep_max: ["Sweep max", "Extremo agudo do LFO"],
   lfo_rate_hz: ["Rate", "Velocidade em Hz"],
+  tempo_sync: ["Tempo sync", "0 livre, 1 sincronizado"],
+  tempo_bpm: ["Tempo BPM", "BPM para sincronização"],
+  tempo_division_beats: ["Tempo division", "Beats por ciclo do LFO"],
   drift_amount: ["Drift amount", "Instabilidade orgânica"],
   drift_rate_hz: ["Drift rate", "Velocidade do drift"],
   lamp_lag: ["Lamp lag", "Inércia óptica ataque/release"],
@@ -40,7 +43,7 @@ const GROUPS = [
     id: "motion",
     title: "Movimento",
     accent: "#6ee7f9",
-    params: ["lfo_rate_hz", "depth", "sweep_min", "sweep_max"],
+    params: ["lfo_rate_hz", "tempo_sync", "tempo_bpm", "tempo_division_beats", "depth", "sweep_min", "sweep_max"],
   },
   {
     id: "blend",
@@ -108,6 +111,9 @@ const SCENES = {
       input_drive: 1.25,
       stereo_width: 0.55,
       lamp_lag: 1.05,
+      tempo_sync: 0,
+      tempo_bpm: 120,
+      tempo_division_beats: 1,
       tone_tilt: -0.08,
     },
   },
@@ -121,6 +127,9 @@ const SCENES = {
       input_drive: 1.55,
       stereo_width: 0.70,
       lamp_lag: 1.25,
+      tempo_sync: 0,
+      tempo_bpm: 120,
+      tempo_division_beats: 1,
       tone_tilt: -0.18,
     },
   },
@@ -134,6 +143,9 @@ const SCENES = {
       input_drive: 1.05,
       stereo_width: 1.18,
       lamp_lag: 0.85,
+      tempo_sync: 1,
+      tempo_bpm: 96,
+      tempo_division_beats: 2,
       tone_tilt: 0.18,
     },
   },
@@ -178,6 +190,9 @@ function sliderValueForParam(param) {
 
 function formatParamValue(name, value) {
   if (name === "lfo_rate_hz") return `${value.toFixed(2)} Hz`;
+  if (name === "tempo_sync") return value >= 0.5 ? "on" : "off";
+  if (name === "tempo_bpm") return `${value.toFixed(1)} BPM`;
+  if (name === "tempo_division_beats") return `${value.toFixed(2)} beats`;
   if (name === "pre_hpf_hz") return `${value.toFixed(1)} Hz`;
   if (name === "lamp_lag") return `${value.toFixed(2)}x`;
   return value.toFixed(3);
@@ -484,7 +499,7 @@ async function boot() {
       max: st.mod._vibe_get_param_max(i),
       def: st.mod._vibe_get_param_default(i),
       normDef: st.mod._vibe_get_param_normalized(st.h, i),
-      usesNormalizedSlider: st.mod.UTF8ToString(st.mod._vibe_get_param_name(i)) === "lfo_rate_hz",
+      usesNormalizedSlider: ["lfo_rate_hz", "tempo_bpm", "tempo_division_beats"].includes(st.mod.UTF8ToString(st.mod._vibe_get_param_name(i))),
     });
   }
   renderParamGroups(paramSpecs);

@@ -110,6 +110,15 @@ static inline float unmap_lfo_rate_normalized(float hz) {
     return clampf(logf(hz / kLfoRateMinHz) / logf(kLfoRateMaxHz / kLfoRateMinHz), 0.0f, 1.0f);
 }
 
+static inline float tempo_synced_lfo_rate_hz(float manual_hz, float tempo_sync, float bpm, float division_beats) {
+    if (tempo_sync < 0.5f) {
+        return clampf(manual_hz, kLfoRateMinHz, kLfoRateMaxHz);
+    }
+    const float safe_bpm = clampf(bpm, 30.0f, 300.0f);
+    const float safe_division = clampf(division_beats, 0.25f, 16.0f);
+    return clampf(safe_bpm / (60.0f * safe_division), kLfoRateMinHz, kLfoRateMaxHz);
+}
+
 // Keeps low/mid feedback behavior familiar while giving the top of the knob
 // more useful sustain range for audible repeats.
 static inline float feedback_musical_gain(float knob) {
@@ -216,6 +225,9 @@ struct VibeUserParams {
     float drift_amount = 0.018f;
     float drift_rate_hz = 0.08f;
     float lamp_lag = 1.0f;
+    float tempo_sync = 0.0f;
+    float tempo_bpm = 120.0f;
+    float tempo_division_beats = 1.0f;
     float pre_hpf_hz = 22.0f;
     float tone_tilt = 0.0f;
     float sat_asymmetry = 0.04f;
@@ -402,6 +414,9 @@ enum class VibeParamId : uint8_t {
     SatOutTrim,
     StereoWidth,
     LampLag,
+    TempoSync,
+    TempoBpm,
+    TempoDivisionBeats,
 };
 
 struct VibeParamSpec {
@@ -428,6 +443,9 @@ static inline VibeParamSpec vibe_param_spec(VibeParamId id) {
         case VibeParamId::SatOutTrim: return {0.60f, 1.20f, 0.82f};
         case VibeParamId::StereoWidth:return {0.0f, 1.35f, 0.75f};
         case VibeParamId::LampLag:    return {0.35f, 2.50f, 1.0f};
+        case VibeParamId::TempoSync:  return {0.0f, 1.0f, 0.0f};
+        case VibeParamId::TempoBpm:   return {30.0f, 300.0f, 120.0f};
+        case VibeParamId::TempoDivisionBeats:return {0.25f, 16.0f, 1.0f};
         default:                      return {0.0f, 1.0f, 0.0f};
     }
 }
@@ -450,6 +468,9 @@ static inline float *vibe_param_slot(VibeUserParams &params, VibeParamId id) {
         case VibeParamId::SatOutTrim:  return &params.sat_out_trim;
         case VibeParamId::StereoWidth: return &params.stereo_width;
         case VibeParamId::LampLag:     return &params.lamp_lag;
+        case VibeParamId::TempoSync:   return &params.tempo_sync;
+        case VibeParamId::TempoBpm:    return &params.tempo_bpm;
+        case VibeParamId::TempoDivisionBeats:return &params.tempo_division_beats;
         default:                       return nullptr;
     }
 }
@@ -472,6 +493,9 @@ static inline const float *vibe_param_slot(const VibeUserParams &params, VibePar
         case VibeParamId::SatOutTrim:  return &params.sat_out_trim;
         case VibeParamId::StereoWidth: return &params.stereo_width;
         case VibeParamId::LampLag:     return &params.lamp_lag;
+        case VibeParamId::TempoSync:   return &params.tempo_sync;
+        case VibeParamId::TempoBpm:    return &params.tempo_bpm;
+        case VibeParamId::TempoDivisionBeats:return &params.tempo_division_beats;
         default:                       return nullptr;
     }
 }
@@ -489,6 +513,9 @@ static inline void sanitize_user_params(VibeUserParams *params) {
     params->drift_amount = clampf(params->drift_amount, 0.0f, 0.05f);
     params->drift_rate_hz = clampf(params->drift_rate_hz, 0.005f, 0.5f);
     params->lamp_lag = clampf(params->lamp_lag, 0.35f, 2.50f);
+    params->tempo_sync = clampf(params->tempo_sync, 0.0f, 1.0f);
+    params->tempo_bpm = clampf(params->tempo_bpm, 30.0f, 300.0f);
+    params->tempo_division_beats = clampf(params->tempo_division_beats, 0.25f, 16.0f);
     params->pre_hpf_hz = clampf(params->pre_hpf_hz, 8.0f, 160.0f);
     params->tone_tilt = clampf(params->tone_tilt, -1.0f, 1.0f);
     params->sat_asymmetry = clampf(params->sat_asymmetry, -0.25f, 0.25f);
@@ -951,7 +978,7 @@ public:
     }
 
     void processSample(float *l, float *r, const VibeUserParams &user, const VibeTuningParams &tuning, LfoShape shape, VibeProfile profile, float drift_alpha, float smoothing, float inv_sample_rate) {
-        const float freq = clampf(user.lfo_rate_hz, kLfoRateMinHz, kLfoRateMaxHz);
+        const float freq = tempo_synced_lfo_rate_hz(user.lfo_rate_hz, user.tempo_sync, user.tempo_bpm, user.tempo_division_beats);
         const float drift_amount = clampf(user.drift_amount, 0.0f, 0.05f);
         const float drift_rate_hz = clampf(user.drift_rate_hz, 0.005f, 0.5f);
 
@@ -1539,6 +1566,9 @@ void Vibe::update_smoothed_user_params() {
     smooth_to_target(smoothed_user.drift_amount, params.user.drift_amount);
     smooth_to_target(smoothed_user.drift_rate_hz, params.user.drift_rate_hz);
     smooth_to_target(smoothed_user.lamp_lag, params.user.lamp_lag);
+    smooth_to_target(smoothed_user.tempo_sync, params.user.tempo_sync);
+    smooth_to_target(smoothed_user.tempo_bpm, params.user.tempo_bpm);
+    smooth_to_target(smoothed_user.tempo_division_beats, params.user.tempo_division_beats);
     smooth_to_target(smoothed_user.pre_hpf_hz, params.user.pre_hpf_hz);
     smooth_to_target(smoothed_user.tone_tilt, params.user.tone_tilt);
     smooth_to_target(smoothed_user.sat_asymmetry, params.user.sat_asymmetry);

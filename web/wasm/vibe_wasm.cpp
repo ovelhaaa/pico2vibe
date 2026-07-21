@@ -32,6 +32,9 @@ static const char* param_name(VibeParamId id) {
         case VibeParamId::SatOutTrim: return "sat_out_trim";
         case VibeParamId::StereoWidth: return "stereo_width";
         case VibeParamId::LampLag: return "lamp_lag";
+        case VibeParamId::TempoSync: return "tempo_sync";
+        case VibeParamId::TempoBpm: return "tempo_bpm";
+        case VibeParamId::TempoDivisionBeats: return "tempo_division_beats";
         default: return "unknown";
     }
 }
@@ -49,7 +52,7 @@ uint32_t vibe_get_sample_rate() { return SAMPLE_RATE_HZ; }
 float vibe_get_engine_sample_rate(VibeHandle* h) { return h->engine.sample_rate(); }
 void vibe_prepare(VibeHandle* h, float sample_rate_hz) { h->engine.prepare(sample_rate_hz); h->output_conditioner.reset(sample_rate_hz, 0xC001C0DEu); }
 uint32_t vibe_get_block_size() { return PERIOD; }
-uint32_t vibe_get_param_count() { return static_cast<uint32_t>(VibeParamId::LampLag) + 1u; }
+uint32_t vibe_get_param_count() { return static_cast<uint32_t>(VibeParamId::TempoDivisionBeats) + 1u; }
 
 const char* vibe_get_param_name(uint32_t id) { return param_name(static_cast<VibeParamId>(id)); }
 float vibe_get_param_min(uint32_t id) { return vibe_param_spec(static_cast<VibeParamId>(id)).min_value; }
