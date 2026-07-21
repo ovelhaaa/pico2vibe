@@ -17,6 +17,10 @@
 
 #define AUDIO_SYS_CLOCK_HZ 135475200u
 
+constexpr float kDefaultVibeSampleRateHz = SAMPLE_RATE;
+constexpr float kMinVibeSampleRateHz = 8000.0f;
+constexpr float kMaxVibeSampleRateHz = 384000.0f;
+
 // DSP diagnostic/mitigation toggles for time-varying IIR coefficient modulation.
 #ifndef VIBE_DIAG_FREEZE_MODULATION
 #define VIBE_DIAG_FREEZE_MODULATION 0
@@ -241,6 +245,12 @@ enum class FeedbackProfile : uint8_t {
 enum class VibeProfile : uint8_t {
     Classic = 0,
     Modern,
+};
+
+enum class VibeQualityMode : uint8_t {
+    Eco = 0,
+    Standard,
+    High,
 };
 
 struct FeedbackProfileCoefs {
@@ -824,7 +834,7 @@ public:
         drift_lfo_phase = 0.0f;
     }
 
-    void processSample(float *l, float *r, const VibeUserParams &user, const VibeTuningParams &tuning, const VibeMusicalParams &musical, LfoShape shape, VibeProfile profile, float drift_alpha, float smoothing) {
+    void processSample(float *l, float *r, const VibeUserParams &user, const VibeTuningParams &tuning, const VibeMusicalParams &musical, LfoShape shape, VibeProfile profile, float drift_alpha, float smoothing, float inv_sample_rate) {
         const float freq = clampf(user.lfo_rate_hz, kLfoRateMinHz, kLfoRateMaxHz);
         const float drift_amount = clampf(user.drift_amount, 0.0f, 0.05f);
         const float drift_rate_hz = clampf(user.drift_rate_hz, 0.005f, 0.5f);
@@ -832,12 +842,12 @@ public:
         drift_state += drift_alpha * (noise_bipolar(drift_rng) - drift_state);
         drift_state = clampf(drift_state, -1.0f, 1.0f);
 
-        drift_lfo_phase += drift_rate_hz * cSAMPLE_RATE;
+        drift_lfo_phase += drift_rate_hz * inv_sample_rate;
         if (drift_lfo_phase >= 1.0f) drift_lfo_phase -= 1.0f;
         const float profile_drift_scale = (profile == VibeProfile::Modern) ? 0.82f : 1.08f;
         const float drift = 1.0f + (drift_amount * profile_drift_scale) * (0.65f * drift_state + 0.35f * sinf(2.0f * kPi * drift_lfo_phase));
 
-        phase += freq * drift * cSAMPLE_RATE;
+        phase += freq * drift * inv_sample_rate;
         if (phase >= 1.0f) phase -= 1.0f;
 
         const float stereo_scale = (profile == VibeProfile::Modern) ? 1.06f : 0.92f;
@@ -883,9 +893,10 @@ struct Allpass1 {
     }
 };
 
-static inline float allpass_coef_from_fc(float fc) {
-    fc = clampf(fc, 20.0f, 12000.0f);
-    const float x = kPi * fc * cSAMPLE_RATE;
+static inline float allpass_coef_from_fc(float fc, float sample_rate_hz) {
+    const float sr = clampf(sample_rate_hz, kMinVibeSampleRateHz, kMaxVibeSampleRateHz);
+    fc = clampf(fc, 20.0f, fminf(12000.0f, sr * 0.45f));
+    const float x = kPi * fc * (1.0f / sr);
     const float t = x / (1.0f - x * x * 0.33333333f);
     return clampf((1.0f - t) / (1.0f + t), -0.995f, 0.995f);
 }
@@ -897,6 +908,8 @@ static inline float allpass_coef_from_fc(float fc) {
 class Vibe {
 public:
     Vibe(float *efxoutl_, float *efxoutr_);
+    void prepare(float sample_rate_hz);
+    float sample_rate() const { return sample_rate_hz; }
     void out(float *smpsl, float *smpsr);
     void init_vibes();
     void reseed(uint32_t seed);
@@ -907,6 +920,8 @@ public:
     float get_param_normalized(VibeParamId id) const;
     void set_voicing(VibeVoicing voicing);
     VibeVoicing voicing() const { return params.voicing; }
+    void set_quality_mode(VibeQualityMode mode);
+    VibeQualityMode quality_mode() const { return quality; }
 
     const VibeUserParams &user_params() const { return params.user; }
     const VibeUserParams &smoothed_user_params() const { return smoothed_user; }
@@ -922,8 +937,11 @@ private:
     // 4) Runtime NaN/Inf guards are desktop-only (see desktop_tools/src/processor.cpp).
     float *efxoutl;
     float *efxoutr;
+    float sample_rate_hz = kDefaultVibeSampleRateHz;
+    float inv_sample_rate = 1.0f / kDefaultVibeSampleRateHz;
     float lpanning = 1.0f, rpanning = 1.0f;
     VibeParams params;
+    VibeQualityMode quality = VibeQualityMode::Standard;
 
     EffectLFO lfo;
 
@@ -1255,6 +1273,14 @@ Vibe::Vibe(float *efxoutl_, float *efxoutr_) : efxoutl(efxoutl_), efxoutr(efxout
     update_time_constants();
 }
 
+void Vibe::prepare(float new_sample_rate_hz) {
+    sample_rate_hz = clampf(new_sample_rate_hz, kMinVibeSampleRateHz, kMaxVibeSampleRateHz);
+    inv_sample_rate = 1.0f / sample_rate_hz;
+    update_time_constants();
+    init_vibes();
+    reset_audio_state(false);
+}
+
 float Vibe::vibefilter(float data, fparams *ftype) {
     const float y0_raw = data * ftype->n0 + ftype->x1 * ftype->n1 - ftype->y1 * ftype->d1;
     const float y0 = zap_denormal(y0_raw);
@@ -1267,8 +1293,8 @@ void Vibe::update_time_constants() {
     const float attack_sec = clampf(params.tuning.lamp_attack_sec, 0.001f, 0.250f);
     const float release_sec = clampf(params.tuning.lamp_release_sec, 0.001f, 0.500f);
 
-    lamp_attack = 1.0f - expf(-cSAMPLE_RATE / attack_sec);
-    lamp_release = 1.0f - expf(-cSAMPLE_RATE / release_sec);
+    lamp_attack = 1.0f - expf(-inv_sample_rate / attack_sec);
+    lamp_release = 1.0f - expf(-inv_sample_rate / release_sec);
 }
 
 void Vibe::reseed(uint32_t seed) {
@@ -1301,6 +1327,19 @@ void Vibe::set_voicing(VibeVoicing voicing_id) {
     update_time_constants();
     init_vibes();
     reset_audio_state(false);
+}
+
+void Vibe::set_quality_mode(VibeQualityMode mode) {
+    switch (mode) {
+        case VibeQualityMode::Eco:
+        case VibeQualityMode::Standard:
+        case VibeQualityMode::High:
+            quality = mode;
+            break;
+        default:
+            quality = VibeQualityMode::Standard;
+            break;
+    }
 }
 
 void Vibe::set_param(VibeParamId id, float value) {
@@ -1342,7 +1381,7 @@ float Vibe::get_param_normalized(VibeParamId id) const {
 void Vibe::update_smoothed_user_params() {
     sanitize_user_params(&params.user);
 
-    const float block_time = fPERIOD / fSAMPLE_RATE;
+    const float block_time = fPERIOD / sample_rate_hz;
     const float smooth_hz = clampf(params.tuning.control_smoothing_hz, 1.0f, 80.0f);
     const float alpha = 1.0f - expf(-2.0f * kPi * smooth_hz * block_time);
 
@@ -1387,7 +1426,7 @@ float Vibe::bjt_shape(float data, float drive) {
 
 float Vibe::hp_pre(float x, float hz, float &x1, float &y1) {
     const float h = clampf(hz, params.tuning.pre_hpf_hz_min, params.tuning.pre_hpf_hz_max);
-    const float a = expf(-2.0f * kPi * h * cSAMPLE_RATE);
+    const float a = expf(-2.0f * kPi * h * inv_sample_rate);
     const float y = a * (y1 + x - x1);
     x1 = zap_denormal(x);
     y1 = zap_denormal(y);
@@ -1398,9 +1437,9 @@ float Vibe::feedback_profile_process(float x, FeedbackProfile profile, VibeProfi
     const FeedbackProfileCoefs coefs = feedback_profile_coefs(profile);
     const float hp_fc = clampf(coefs.hp_fc_hz, 250.0f, 700.0f);
     const float lp_fc = clampf(coefs.lp_fc_hz, 1000.0f, 1800.0f);
-    const float hp_a = expf(-2.0f * kPi * hp_fc * cSAMPLE_RATE);
+    const float hp_a = expf(-2.0f * kPi * hp_fc * inv_sample_rate);
     const float lp_profile_scale = (vibe_profile == VibeProfile::Modern) ? 1.08f : 0.84f;
-    const float lp_a = 1.0f - expf(-2.0f * kPi * (lp_fc * lp_profile_scale) * cSAMPLE_RATE);
+    const float lp_a = 1.0f - expf(-2.0f * kPi * (lp_fc * lp_profile_scale) * inv_sample_rate);
 
     // Cascaded 1-pole HP + 1-pole LP yields a lightweight mid band around ~700-1.2 kHz.
     const float hp_y = hp_a * (mid_state.hp_y1 + x - mid_state.hp_x1);
@@ -1425,7 +1464,7 @@ float Vibe::wet_antialias_process(float x, float coeff, float &state) {
 
 float Vibe::tone_tilt_process(float x, float tilt, float &lp) {
     const float fc = clampf(params.tuning.tilt_hz, 350.0f, 2600.0f);
-    const float a = 1.0f - expf(-2.0f * kPi * fc * cSAMPLE_RATE);
+    const float a = 1.0f - expf(-2.0f * kPi * fc * inv_sample_rate);
     lp = zap_denormal(lp + a * (x - lp));
     const float high = x - lp;
     const float amt = clampf(tilt, -1.0f, 1.0f);
@@ -1433,7 +1472,7 @@ float Vibe::tone_tilt_process(float x, float tilt, float &lp) {
 }
 
 void Vibe::init_vibes() {
-    k = 2.0f * fSAMPLE_RATE;
+    k = 2.0f * sample_rate_hz;
     R1 = 4700.0f;
     C2 = 1e-6f;
     beta = 150.0f;
@@ -1559,7 +1598,7 @@ void Vibe::modulate_allpass(float res_l, float res_r) {
                                        params.tuning.ldr_max_ohms);
         const float currentRv = 4700.0f + stage_res;
         const float fc = 1.0f / (2.0f * kPi * currentRv * C1[i]);
-        ap_a_target[i] = allpass_coef_from_fc(fc);
+        ap_a_target[i] = allpass_coef_from_fc(fc, sample_rate_hz);
     }
 }
 
@@ -1634,12 +1673,12 @@ void Vibe::out(float *smpsl, float *smpsr) {
     // Invariant: stage integrator state is always bounded by tuning to avoid runaway poles.
     const float stage_limit = clampf(params.tuning.stage_state_limit, 2.0f, 12.0f);
     // Invariant: per-sample coefficients below are block constants; avoid recomputing transcendental math.
-    const float fb_env_attack = 1.0f - expf(-2.0f * kPi * 320.0f * cSAMPLE_RATE);
-    const float fb_env_release = 1.0f - expf(-2.0f * kPi * 48.0f * cSAMPLE_RATE);
-    const float wet_env_attack = 1.0f - expf(-2.0f * kPi * 45.0f * cSAMPLE_RATE);
-    const float wet_env_release = 1.0f - expf(-2.0f * kPi * 6.0f * cSAMPLE_RATE);
-    const float input_env_attack = 1.0f - expf(-2.0f * kPi * 180.0f * cSAMPLE_RATE);
-    const float input_env_release = 1.0f - expf(-2.0f * kPi * 16.0f * cSAMPLE_RATE);
+    const float fb_env_attack = 1.0f - expf(-2.0f * kPi * 320.0f * inv_sample_rate);
+    const float fb_env_release = 1.0f - expf(-2.0f * kPi * 48.0f * inv_sample_rate);
+    const float wet_env_attack = 1.0f - expf(-2.0f * kPi * 45.0f * inv_sample_rate);
+    const float wet_env_release = 1.0f - expf(-2.0f * kPi * 6.0f * inv_sample_rate);
+    const float input_env_attack = 1.0f - expf(-2.0f * kPi * 180.0f * inv_sample_rate);
+    const float input_env_release = 1.0f - expf(-2.0f * kPi * 16.0f * inv_sample_rate);
 
     depth_ramp.begin(prev.depth, smoothed_user.depth, PERIOD);
     fb_ramp.begin(prev.feedback, smoothed_user.feedback, PERIOD);
@@ -1653,10 +1692,10 @@ void Vibe::out(float *smpsl, float *smpsr) {
     sat_asym_ramp.begin(prev.sat_asymmetry, smoothed_user.sat_asymmetry, PERIOD);
     sat_trim_ramp.begin(prev.sat_out_trim, smoothed_user.sat_out_trim, PERIOD);
 
-    const float drift_alpha = 1.0f - expf(-2.0f * kPi * clampf(smoothed_user.drift_rate_hz, 0.005f, 0.5f) * cSAMPLE_RATE);
+    const float drift_alpha = 1.0f - expf(-2.0f * kPi * clampf(smoothed_user.drift_rate_hz, 0.005f, 0.5f) * inv_sample_rate);
     const float profile_smooth_scale = (params.profile == VibeProfile::Modern) ? 1.12f : 0.92f;
     const float smooth_hz = (4.0f + 120.0f * clampf(params.tuning.lfo_shape_smoothing, 0.01f, 1.0f)) * profile_smooth_scale;
-    const float lfo_smoothing = 1.0f - expf(-2.0f * kPi * smooth_hz * cSAMPLE_RATE);
+    const float lfo_smoothing = 1.0f - expf(-2.0f * kPi * smooth_hz * inv_sample_rate);
     const float auto_level = clampf(params.musical.auto_level_amount, 0.0f, 1.0f);
     constexpr float kInvDefaultLdrCurve = 1.0f / 7.6009f;
     const float ldr_curve_scale = clampf(params.tuning.ldr_curve, 0.1f, 24.0f) * kInvDefaultLdrCurve;
@@ -1675,16 +1714,21 @@ void Vibe::out(float *smpsl, float *smpsr) {
     const float profile_stereo_reduction = classic_chorus_profile ? 0.88f : (classic_profile ? 0.93f : 1.06f);
     const float stereo_width = clampf(params.musical.stereo_width, 0.0f, 1.35f);
     const float classic_stereo_reduction = clampf(profile_stereo_reduction * stereo_width, 0.0f, 1.35f);
-    const float ldr_coeff_alpha = 1.0f - expf(-cSAMPLE_RATE / clampf(VIBE_LDR_COEFF_SMOOTH_TAU_SEC, 0.0005f, 0.005f));
-    const float wet_smooth_hz = (params.profile == VibeProfile::Modern) ? 7200.0f : 5400.0f;
-    const float wet_smooth_coeff = 1.0f - expf(-2.0f * kPi * wet_smooth_hz * cSAMPLE_RATE);
+    const float ldr_coeff_alpha = 1.0f - expf(-inv_sample_rate / clampf(VIBE_LDR_COEFF_SMOOTH_TAU_SEC, 0.0005f, 0.005f));
+    const float wet_smooth_base_hz = (params.profile == VibeProfile::Modern) ? 7200.0f : 5400.0f;
+    const float quality_smooth_scale = (quality == VibeQualityMode::High) ? 1.18f : ((quality == VibeQualityMode::Eco) ? 0.76f : 1.0f);
+    const float wet_smooth_coeff = 1.0f - expf(-2.0f * kPi * wet_smooth_base_hz * quality_smooth_scale * inv_sample_rate);
+    const int coeff_update_period = (quality == VibeQualityMode::High) ? 1 : ((quality == VibeQualityMode::Eco) ? 8 : 4);
+#if VIBE_DIAG_FREEZE_MODULATION || VIBE_COEFF_UPDATE_PER_SAMPLE
+    (void)coeff_update_period;
+#endif
 
     for (int i = 0; i < PERIOD; i++) {
         smoothed_user.sat_asymmetry = sat_asym_ramp.tick();
         smoothed_user.sat_out_trim = sat_trim_ramp.tick();
 
         float lfol = 0.0f, lfor = 0.0f;
-        lfo.processSample(&lfol, &lfor, smoothed_user, params.tuning, params.musical, params.lfo_shape, params.profile, drift_alpha, lfo_smoothing);
+        lfo.processSample(&lfol, &lfor, smoothed_user, params.tuning, params.musical, params.lfo_shape, params.profile, drift_alpha, lfo_smoothing, inv_sample_rate);
 
         const float depth = depth_ramp.tick();
         const float sweep_min = sweep_min_ramp.tick();
@@ -1736,7 +1780,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
 #if VIBE_COEFF_UPDATE_PER_SAMPLE
         modulate(mod_res_l, mod_res_r);
 #else
-        if ((i & 0x3) == 0) {
+        if (coeff_update_period == 1 || (i % coeff_update_period) == 0) {
             modulate(mod_res_l, mod_res_r);
         }
 #endif

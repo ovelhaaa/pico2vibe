@@ -42,6 +42,8 @@ VibeHandle* vibe_create() {
 void vibe_destroy(VibeHandle* h) { delete h; }
 
 uint32_t vibe_get_sample_rate() { return SAMPLE_RATE_HZ; }
+float vibe_get_engine_sample_rate(VibeHandle* h) { return h->engine.sample_rate(); }
+void vibe_prepare(VibeHandle* h, float sample_rate_hz) { h->engine.prepare(sample_rate_hz); }
 uint32_t vibe_get_block_size() { return PERIOD; }
 uint32_t vibe_get_param_count() { return static_cast<uint32_t>(VibeParamId::SatOutTrim) + 1u; }
 
@@ -77,6 +79,17 @@ const char* vibe_get_voicing_name(uint32_t id) {
     }
 }
 void vibe_set_voicing(VibeHandle* h, uint32_t id) { h->engine.set_voicing(static_cast<VibeVoicing>(id)); }
+
+uint32_t vibe_get_quality_mode_count() { return 3u; }
+const char* vibe_get_quality_mode_name(uint32_t id) {
+    switch (static_cast<VibeQualityMode>(id)) {
+        case VibeQualityMode::Eco: return "Eco";
+        case VibeQualityMode::High: return "High";
+        case VibeQualityMode::Standard:
+        default: return "Standard";
+    }
+}
+void vibe_set_quality_mode(VibeHandle* h, uint32_t id) { h->engine.set_quality_mode(static_cast<VibeQualityMode>(id)); }
 
 void vibe_reset(VibeHandle* h, uint32_t seed) { h->engine.reseed(seed); }
 

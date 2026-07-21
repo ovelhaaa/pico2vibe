@@ -31,6 +31,7 @@ void print_usage() {
         << "  --preset <classic_chorus|classic_vibrato|deep_throb|modern_wide|vintage_univibe_chorus|deep_hendrix_swirl|trower_lead|gentle_clean_vibe|wide_stereo_dream|vintage_vibrato|shallow_always_on|psychedelic_slow_sweep|fast_rotary_vibe|bass_synth_friendly|lo_fi_lamp_drift|modern_hifi_phase_vibe>\n"
         << "  --engine <legacy|improved> (padrao: improved)\n"
         << "  --ab <none|difference>    (padrao: none)\n"
+        << "  --quality <eco|standard|high> (padrao: standard)\n"
         << "  --drive <0.5..6>          (padrao: 3.5)\n"
         << "  --output-gain <0.25..2>   (padrao: 1.0)\n"
         << "  --tone-tilt <-1..1>       (padrao: 0.0)\n"
@@ -156,6 +157,12 @@ int main(int argc, char** argv) {
                 if (ab == "none") params.compare_mode = UnivibeParams::CompareMode::none;
                 else if (ab == "difference") params.compare_mode = UnivibeParams::CompareMode::difference;
                 else throw std::runtime_error("ab invalido: use none|difference");
+            } else if (arg == "--quality") {
+                const std::string q = next();
+                if (q == "eco") params.quality_mode = UnivibeParams::QualityMode::eco;
+                else if (q == "standard") params.quality_mode = UnivibeParams::QualityMode::standard;
+                else if (q == "high") params.quality_mode = UnivibeParams::QualityMode::high;
+                else throw std::runtime_error("quality invalido: use eco|standard|high");
             } else if (arg == "--drive") {
                 params.input_drive = std::stof(next());
             } else if (arg == "--output-gain") {
@@ -183,9 +190,7 @@ int main(int argc, char** argv) {
         const std::string actual_input_wav = ensure_wav_input(input, temp_in_wav);
 
         StereoBuffer audio = read_wav_file(actual_input_wav);
-        if (audio.sample_rate != 44100u) {
-            throw std::runtime_error("Amostragem suportada para equivalencia com Pico: 44100 Hz");
-        }
+        params.sample_rate_hz = static_cast<float>(audio.sample_rate ? audio.sample_rate : 44100u);
 
         DesktopUnivibeProcessor processor(params);
         processor.process_in_place(audio.left, audio.right);

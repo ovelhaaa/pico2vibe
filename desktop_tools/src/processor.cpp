@@ -89,6 +89,15 @@ void sanitize_vibe_state(Vibe* vibe) {
     }
 }
 
+VibeQualityMode map_quality(UnivibeParams::QualityMode q) {
+    switch (q) {
+        case UnivibeParams::QualityMode::eco: return VibeQualityMode::Eco;
+        case UnivibeParams::QualityMode::high: return VibeQualityMode::High;
+        case UnivibeParams::QualityMode::standard:
+        default: return VibeQualityMode::Standard;
+    }
+}
+
 VibeVoicing map_preset(UnivibeParams::Preset p) {
     switch (p) {
         case UnivibeParams::Preset::classic_vibrato: return VibeVoicing::ClassicVibrato;
@@ -128,8 +137,10 @@ struct DesktopUnivibeProcessor::Impl {
     explicit Impl(const UnivibeParams& p) : user(p) {
         std::srand(p.seed);
         improved = new Vibe(out_l.data(), out_r.data());
+        improved->prepare(p.sample_rate_hz);
         improved->reseed(p.seed);
         improved->set_voicing(map_preset(p.preset));
+        improved->set_quality_mode(map_quality(p.quality_mode));
         improved->set_param(VibeParamId::Depth, p.depth);
         improved->set_param(VibeParamId::Feedback, p.feedback);
         improved->set_param(VibeParamId::Mix, p.mix);
@@ -144,8 +155,10 @@ struct DesktopUnivibeProcessor::Impl {
 
         if (p.engine_mode == UnivibeParams::EngineMode::legacy || p.compare_mode == UnivibeParams::CompareMode::difference) {
             legacy = new Vibe(diff_l.data(), diff_r.data());
+            legacy->prepare(p.sample_rate_hz);
             legacy->reseed(p.seed);
             legacy->set_voicing(VibeVoicing::ClassicChorus);
+            legacy->set_quality_mode(map_quality(p.quality_mode));
             legacy->params.lfo_shape = LfoShape::Sine;
             legacy->params.feedback_profile = FeedbackProfile::ClassicFeedback;
             legacy->params.musical.auto_level_amount = 1.0f;
@@ -170,6 +183,9 @@ struct DesktopUnivibeProcessor::Impl {
 };
 
 DesktopUnivibeProcessor::DesktopUnivibeProcessor(const UnivibeParams& params) {
+    if (params.sample_rate_hz < kMinVibeSampleRateHz || params.sample_rate_hz > kMaxVibeSampleRateHz) {
+        throw std::runtime_error("sample_rate_hz fora do intervalo suportado");
+    }
     if (params.rate_hz < 0.01f || params.rate_hz > 20.0f) {
         throw std::runtime_error("rate_hz fora do intervalo recomendado (0.01..20)");
     }

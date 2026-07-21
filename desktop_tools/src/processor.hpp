@@ -12,6 +12,11 @@ struct UnivibeParams {
         none,
         difference,
     };
+    enum class QualityMode {
+        eco,
+        standard,
+        high,
+    };
     enum class Preset {
         classic_chorus,
         classic_vibrato,
@@ -32,6 +37,7 @@ struct UnivibeParams {
     };
 
     bool mode_chorus = true;
+    float sample_rate_hz = 44100.0f;
     float rate_hz = 0.85f;
     float depth = 0.78f;
     float feedback = 0.34f;
@@ -45,6 +51,7 @@ struct UnivibeParams {
     Preset preset = Preset::classic_chorus;
     EngineMode engine_mode = EngineMode::improved;
     CompareMode compare_mode = CompareMode::none;
+    QualityMode quality_mode = QualityMode::standard;
     uint32_t seed = 1;
 };
 
