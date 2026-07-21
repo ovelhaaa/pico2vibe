@@ -32,6 +32,7 @@ void print_usage() {
         << "  --engine <legacy|improved> (padrao: improved)\n"
         << "  --ab <none|difference>    (padrao: none)\n"
         << "  --quality <eco|standard|high> (padrao: standard)\n"
+        << "  --condition-output       aplica DC/headroom/limiter compartilhado\n"
         << "  --drive <0.5..6>          (padrao: 3.5)\n"
         << "  --output-gain <0.25..2>   (padrao: 1.0)\n"
         << "  --tone-tilt <-1..1>       (padrao: 0.0)\n"
@@ -163,6 +164,8 @@ int main(int argc, char** argv) {
                 else if (q == "standard") params.quality_mode = UnivibeParams::QualityMode::standard;
                 else if (q == "high") params.quality_mode = UnivibeParams::QualityMode::high;
                 else throw std::runtime_error("quality invalido: use eco|standard|high");
+            } else if (arg == "--condition-output") {
+                params.output_conditioning = true;
             } else if (arg == "--drive") {
                 params.input_drive = std::stof(next());
             } else if (arg == "--output-gain") {

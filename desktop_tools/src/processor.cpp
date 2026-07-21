@@ -133,9 +133,11 @@ struct DesktopUnivibeProcessor::Impl {
     Vibe* legacy = nullptr;
     UnivibeParams user{};
     AudioMetrics metrics{};
+    VibeOutputConditioner output_conditioner{};
 
     explicit Impl(const UnivibeParams& p) : user(p) {
         std::srand(p.seed);
+        output_conditioner.reset(p.sample_rate_hz, p.seed ^ 0xC001C0DEu);
         improved = new Vibe(out_l.data(), out_r.data());
         improved->prepare(p.sample_rate_hz);
         improved->reseed(p.seed);
@@ -174,6 +176,14 @@ struct DesktopUnivibeProcessor::Impl {
             legacy->set_param(VibeParamId::SatOutTrim, 1.0f);
             legacy->mode_chorus = p.mode_chorus;
         }
+    }
+
+    void write_output_sample(std::vector<float>& left, std::vector<float>& right, size_t index, float out_l_value, float out_r_value) {
+        if (user.output_conditioning) {
+            output_conditioner.process_frame(out_l_value, out_r_value, &out_l_value, &out_r_value);
+        }
+        left[index] = out_l_value;
+        right[index] = out_r_value;
     }
 
     ~Impl() {
@@ -232,8 +242,7 @@ void DesktopUnivibeProcessor::process_in_place(std::vector<float>& left, std::ve
             debug_assert_vibe_state_finite(impl_->legacy);
             sanitize_vibe_state(impl_->legacy);
             for (size_t i = 0; i < take; ++i) {
-                left[pos + i] = impl_->diff_l[i];
-                right[pos + i] = impl_->diff_r[i];
+                impl_->write_output_sample(left, right, pos + i, impl_->diff_l[i], impl_->diff_r[i]);
             }
         } else {
             impl_->improved->out(impl_->in_l.data(), impl_->in_r.data());
@@ -245,13 +254,11 @@ void DesktopUnivibeProcessor::process_in_place(std::vector<float>& left, std::ve
                 debug_assert_vibe_state_finite(impl_->legacy);
                 sanitize_vibe_state(impl_->legacy);
                 for (size_t i = 0; i < take; ++i) {
-                    left[pos + i] = impl_->out_l[i] - impl_->diff_l[i];
-                    right[pos + i] = impl_->out_r[i] - impl_->diff_r[i];
+                    impl_->write_output_sample(left, right, pos + i, impl_->out_l[i] - impl_->diff_l[i], impl_->out_r[i] - impl_->diff_r[i]);
                 }
             } else {
                 for (size_t i = 0; i < take; ++i) {
-                    left[pos + i] = impl_->out_l[i];
-                    right[pos + i] = impl_->out_r[i];
+                    impl_->write_output_sample(left, right, pos + i, impl_->out_l[i], impl_->out_r[i]);
                 }
             }
         }

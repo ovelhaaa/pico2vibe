@@ -52,6 +52,7 @@ struct UnivibeParams {
     EngineMode engine_mode = EngineMode::improved;
     CompareMode compare_mode = CompareMode::none;
     QualityMode quality_mode = QualityMode::standard;
+    bool output_conditioning = false;
     uint32_t seed = 1;
 };
 

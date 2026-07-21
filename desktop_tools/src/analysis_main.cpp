@@ -31,6 +31,7 @@ struct RunConfig {
     float sine_seconds = 2.0f;
     float impulse_seconds = 1.0f;
     fs::path compare_to;
+    UnivibeParams::QualityMode quality_mode = UnivibeParams::QualityMode::standard;
 };
 
 struct FreqPoint {
@@ -49,10 +50,18 @@ void usage() {
         << "  --levels-db <lista>            Ex: -24,-18,-12,-6,0\n"
         << "  --sweep-seconds <seg>          Duracao do sweep (padrao: 8)\n"
         << "  --compare-to <pasta>           Pasta de baseline para gerar diff de summary\n"
+        << "  --quality <eco|standard|high>  Qualidade do DSP (padrao: standard)\n"
         << "  --help\n\n"
         << "Exemplo:\n"
-        << "  dsp_validate --out-dir out/new --preset classic --preset deep\\n"
+        << "  dsp_validate --out-dir out/new --preset classic --preset deep\n"
         << "               --compare-to out/old\n";
+}
+
+UnivibeParams::QualityMode parse_quality(const std::string& name) {
+    if (name == "eco") return UnivibeParams::QualityMode::eco;
+    if (name == "standard") return UnivibeParams::QualityMode::standard;
+    if (name == "high") return UnivibeParams::QualityMode::high;
+    throw std::runtime_error("Qualidade invalida: " + name);
 }
 
 std::vector<float> parse_list(const std::string& csv) {
@@ -545,7 +554,8 @@ void write_signal_pair(const fs::path& dir,
 }
 
 void run_preset(const std::string& preset_name, const RunConfig& cfg) {
-    const UnivibeParams params = preset_params(preset_name);
+    UnivibeParams params = preset_params(preset_name);
+    params.quality_mode = cfg.quality_mode;
     const fs::path root = cfg.out_dir / preset_name;
     const fs::path signal_dir = root / "signals";
     const fs::path metric_dir = root / "metrics";
@@ -642,6 +652,8 @@ RunConfig parse_args(int argc, char** argv) {
             cfg.sweep_seconds = std::stof(next());
         } else if (arg == "--compare-to") {
             cfg.compare_to = next();
+        } else if (arg == "--quality") {
+            cfg.quality_mode = parse_quality(next());
         } else {
             throw std::runtime_error("Argumento desconhecido: " + arg);
         }

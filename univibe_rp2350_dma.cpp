@@ -66,62 +66,7 @@ static inline int32_t float_to_pcm24(float v, uint32_t &rng_state) {
     return ((int32_t)(v * 8388607.0f)) << 8;
 }
 
-struct OutputDcBlocker {
-    float x1 = 0.0f;
-    float y1 = 0.0f;
-};
-
-struct OutputConditioner {
-    OutputDcBlocker dc_l;
-    OutputDcBlocker dc_r;
-    float env = 0.0f;
-    float trim = 1.0f;
-    uint32_t dither_rng = 0xC001C0DEu;
-};
-
-static OutputConditioner output_conditioner;
-
-static inline float dc_block_sample(OutputDcBlocker &s, float x) {
-#if ENABLE_OUTPUT_DC_BLOCKER
-    // Very low cutoff (~8 Hz) removes slow bias drift while preserving guitar lows.
-    constexpr float kDcR = 0.99886f;
-    const float y = (x - s.x1) + kDcR * s.y1;
-    s.x1 = x;
-    s.y1 = y;
-    return y;
-#else
-    (void)s;
-    return x;
-#endif
-}
-
-static inline void condition_output_frame(OutputConditioner &st, float in_l, float in_r, float *out_l, float *out_r) {
-    float y_l = dc_block_sample(st.dc_l, in_l);
-    float y_r = dc_block_sample(st.dc_r, in_r);
-
-#if ENABLE_OUTPUT_AUTO_HEADROOM
-    // Update shared gain once per stereo frame so R does not depend on serial L-before-R processing.
-    const float abs_y = fmaxf(fabsf(y_l), fabsf(y_r));
-    const float env_attack = 0.14f;
-    const float env_release = 0.003f;
-    st.env += (abs_y > st.env ? env_attack : env_release) * (abs_y - st.env);
-    const float target = (st.env > 0.92f) ? (0.92f / (st.env + 1e-12f)) : 1.0f;
-    const float trim_attack = 0.20f;
-    const float trim_release = 0.0015f;
-    st.trim += (target < st.trim ? trim_attack : trim_release) * (target - st.trim);
-    y_l *= st.trim;
-    y_r *= st.trim;
-#endif
-
-#if ENABLE_OUTPUT_SOFT_LIMITER
-    // Safety limiter: soft knee near full-scale avoids edgy hard clipping.
-    const float limit_drive = 1.25f;
-    y_l = soft_clip_cubic(y_l * limit_drive) * (1.0f / limit_drive);
-    y_r = soft_clip_cubic(y_r * limit_drive) * (1.0f / limit_drive);
-#endif
-    *out_l = y_l;
-    *out_r = y_r;
-}
+static VibeOutputConditioner output_conditioner;
 
 // ============================================================================
 // Buffers
@@ -352,9 +297,7 @@ static void audio_start(void) {
     rx_block_ready[1] = false;
     tx_block_ready[0] = false;
     tx_block_ready[1] = false;
-    output_conditioner = {};
-    output_conditioner.trim = 1.0f;
-    output_conditioner.dither_rng = time_us_32() ^ 0xC001C0DEu;
+    output_conditioner.reset(SAMPLE_RATE, time_us_32() ^ 0xC001C0DEu);
 
     pio_sm_set_enabled(pio, sm_clk, false);
     pio_sm_set_enabled(pio, sm_tx, false);
@@ -400,9 +343,9 @@ static void process_block(int block_index) {
     for (int i = 0; i < PERIOD; i++) {
         float out_l = 0.0f;
         float out_r = 0.0f;
-        condition_output_frame(output_conditioner, dsp_out_l[i], dsp_out_r[i], &out_l, &out_r);
-        tx_dma_buf[block_index][2 * i + 0] = float_to_pcm24(out_l, output_conditioner.dither_rng);
-        tx_dma_buf[block_index][2 * i + 1] = float_to_pcm24(out_r, output_conditioner.dither_rng);
+        output_conditioner.process_frame(dsp_out_l[i], dsp_out_r[i], &out_l, &out_r);
+        tx_dma_buf[block_index][2 * i + 0] = float_to_pcm24(out_l, output_conditioner.dither_rng_state());
+        tx_dma_buf[block_index][2 * i + 1] = float_to_pcm24(out_r, output_conditioner.dither_rng_state());
     }
 #endif
 

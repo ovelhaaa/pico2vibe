@@ -10,6 +10,8 @@ struct VibeHandle {
     float out_l[PERIOD]{};
     float out_r[PERIOD]{};
     Vibe engine{out_l, out_r};
+    VibeOutputConditioner output_conditioner{};
+    bool output_conditioning = false;
 };
 
 static const char* param_name(VibeParamId id) {
@@ -43,7 +45,7 @@ void vibe_destroy(VibeHandle* h) { delete h; }
 
 uint32_t vibe_get_sample_rate() { return SAMPLE_RATE_HZ; }
 float vibe_get_engine_sample_rate(VibeHandle* h) { return h->engine.sample_rate(); }
-void vibe_prepare(VibeHandle* h, float sample_rate_hz) { h->engine.prepare(sample_rate_hz); }
+void vibe_prepare(VibeHandle* h, float sample_rate_hz) { h->engine.prepare(sample_rate_hz); h->output_conditioner.reset(sample_rate_hz, 0xC001C0DEu); }
 uint32_t vibe_get_block_size() { return PERIOD; }
 uint32_t vibe_get_param_count() { return static_cast<uint32_t>(VibeParamId::SatOutTrim) + 1u; }
 
@@ -90,6 +92,7 @@ const char* vibe_get_quality_mode_name(uint32_t id) {
     }
 }
 void vibe_set_quality_mode(VibeHandle* h, uint32_t id) { h->engine.set_quality_mode(static_cast<VibeQualityMode>(id)); }
+void vibe_set_output_conditioning(VibeHandle* h, uint32_t enabled) { h->output_conditioning = enabled != 0u; }
 
 void vibe_reset(VibeHandle* h, uint32_t seed) { h->engine.reseed(seed); }
 
@@ -105,8 +108,14 @@ void vibe_process_stereo(VibeHandle* h, const float* in_l, const float* in_r, fl
       std::memcpy(block_l, in_l + pos, n * sizeof(float));
       std::memcpy(block_r, in_r + pos, n * sizeof(float));
       h->engine.out(block_l, block_r);
-      std::memcpy(out_l + pos, h->out_l, n * sizeof(float));
-      std::memcpy(out_r + pos, h->out_r, n * sizeof(float));
+      if (h->output_conditioning) {
+        for (uint32_t i = 0; i < n; ++i) {
+          h->output_conditioner.process_frame(h->out_l[i], h->out_r[i], out_l + pos + i, out_r + pos + i);
+        }
+      } else {
+        std::memcpy(out_l + pos, h->out_l, n * sizeof(float));
+        std::memcpy(out_r + pos, h->out_r, n * sizeof(float));
+      }
       pos += n;
     }
 }
