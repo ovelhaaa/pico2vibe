@@ -27,6 +27,7 @@ Executaveis gerados:
 
 - `build/desktop_tools/univibe_cli.exe`
 - `build/desktop_tools/dsp_validate.exe`
+- `build/desktop_tools/vst_param_manifest.exe`
 
 ## Usar CLI de processamento (arquivo único)
 
@@ -107,6 +108,22 @@ Isso gera, por preset:
 - `metrics/summary.csv`
 - `metrics/summary_vs_baseline.csv` (quando `--compare-to` é usado)
 
+## Manifesto de parâmetros para VST
+
+O utilitário `vst_param_manifest.exe` exporta a lista estável de parâmetros do core DSP em CSV. Use este arquivo como contrato inicial para IDs de automação, nomes de parâmetros, unidades, faixas e defaults no futuro plugin VST.
+
+```powershell
+build/desktop_tools/vst_param_manifest.exe > build/desktop_tools/vst_params.csv
+```
+
+Colunas geradas:
+
+- `id`: índice estável do `VibeParamId`.
+- `stable_name`: nome persistente para automação/presets.
+- `label`: nome legível para UI.
+- `unit`: unidade sugerida para host.
+- `min`, `max`, `default`: faixa usada pelo core.
+- `flags`: dicas para host (`continuous`, `boolean`, `log_scale`, `tempo`, `output`).
 ## GUI Python
 
 ```powershell

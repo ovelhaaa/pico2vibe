@@ -33,6 +33,10 @@ add_executable(dsp_validate
 )
 
 configure_desktop_tool_target(dsp_validate)
+add_executable(vst_param_manifest
+    src/vst_param_manifest.cpp
+)
+configure_desktop_tool_target(vst_param_manifest)
 
 function(add_silence_test target)
     add_executable(${target}

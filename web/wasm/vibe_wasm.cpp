@@ -14,32 +14,6 @@ struct VibeHandle {
     bool output_conditioning = false;
 };
 
-static const char* param_name(VibeParamId id) {
-    switch (id) {
-        case VibeParamId::Depth: return "depth";
-        case VibeParamId::Feedback: return "feedback";
-        case VibeParamId::Mix: return "mix";
-        case VibeParamId::InputDrive: return "input_drive";
-        case VibeParamId::OutputGain: return "output_gain";
-        case VibeParamId::SweepMin: return "sweep_min";
-        case VibeParamId::SweepMax: return "sweep_max";
-        case VibeParamId::LfoRateHz: return "lfo_rate_hz";
-        case VibeParamId::DriftAmount: return "drift_amount";
-        case VibeParamId::DriftRateHz: return "drift_rate_hz";
-        case VibeParamId::PreHpfHz: return "pre_hpf_hz";
-        case VibeParamId::ToneTilt: return "tone_tilt";
-        case VibeParamId::SatAsymmetry: return "sat_asymmetry";
-        case VibeParamId::SatOutTrim: return "sat_out_trim";
-        case VibeParamId::StereoWidth: return "stereo_width";
-        case VibeParamId::LampLag: return "lamp_lag";
-        case VibeParamId::TempoSync: return "tempo_sync";
-        case VibeParamId::TempoBpm: return "tempo_bpm";
-        case VibeParamId::TempoDivisionBeats: return "tempo_division_beats";
-        case VibeParamId::NoiseAmount: return "noise_amount";
-        default: return "unknown";
-    }
-}
-
 VibeHandle* vibe_create() {
     auto* h = new VibeHandle();
     h->engine.reseed(1);
@@ -53,12 +27,15 @@ uint32_t vibe_get_sample_rate() { return SAMPLE_RATE_HZ; }
 float vibe_get_engine_sample_rate(VibeHandle* h) { return h->engine.sample_rate(); }
 void vibe_prepare(VibeHandle* h, float sample_rate_hz) { h->engine.prepare(sample_rate_hz); h->output_conditioner.reset(sample_rate_hz, 0xC001C0DEu); }
 uint32_t vibe_get_block_size() { return PERIOD; }
-uint32_t vibe_get_param_count() { return static_cast<uint32_t>(VibeParamId::NoiseAmount) + 1u; }
+uint32_t vibe_get_param_count() { return vibe_param_count(); }
 
-const char* vibe_get_param_name(uint32_t id) { return param_name(static_cast<VibeParamId>(id)); }
+const char* vibe_get_param_name(uint32_t id) { return vibe_param_metadata(static_cast<VibeParamId>(id)).stable_name; }
 float vibe_get_param_min(uint32_t id) { return vibe_param_spec(static_cast<VibeParamId>(id)).min_value; }
 float vibe_get_param_max(uint32_t id) { return vibe_param_spec(static_cast<VibeParamId>(id)).max_value; }
 float vibe_get_param_default(uint32_t id) { return vibe_param_spec(static_cast<VibeParamId>(id)).default_value; }
+const char* vibe_get_param_label(uint32_t id) { return vibe_param_metadata(static_cast<VibeParamId>(id)).label; }
+const char* vibe_get_param_unit(uint32_t id) { return vibe_param_metadata(static_cast<VibeParamId>(id)).unit; }
+uint32_t vibe_get_param_flags(uint32_t id) { return vibe_param_metadata(static_cast<VibeParamId>(id)).flags; }
 float vibe_get_param(VibeHandle* h, uint32_t id) { return h->engine.get_param(static_cast<VibeParamId>(id)); }
 float vibe_get_param_normalized(VibeHandle* h, uint32_t id) { return h->engine.get_param_normalized(static_cast<VibeParamId>(id)); }
 void vibe_set_param(VibeHandle* h, uint32_t id, float v) { h->engine.set_param(static_cast<VibeParamId>(id), v); }

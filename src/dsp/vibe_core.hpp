@@ -427,6 +427,51 @@ struct VibeParamSpec {
     float default_value;
 };
 
+enum VibeParamFlags : uint8_t {
+    VibeParamFlagNone = 0u,
+    VibeParamFlagBoolean = 1u << 0u,
+    VibeParamFlagLogScale = 1u << 1u,
+    VibeParamFlagTempo = 1u << 2u,
+    VibeParamFlagOutput = 1u << 3u,
+};
+
+struct VibeParamMetadata {
+    const char *stable_name;
+    const char *label;
+    const char *unit;
+    uint8_t flags;
+};
+
+static inline uint32_t vibe_param_count() {
+    return static_cast<uint32_t>(VibeParamId::NoiseAmount) + 1u;
+}
+
+static inline VibeParamMetadata vibe_param_metadata(VibeParamId id) {
+    switch (id) {
+        case VibeParamId::Depth:              return {"depth", "Depth", "ratio", VibeParamFlagNone};
+        case VibeParamId::Feedback:           return {"feedback", "Feedback", "ratio", VibeParamFlagNone};
+        case VibeParamId::Mix:                return {"mix", "Mix", "ratio", VibeParamFlagNone};
+        case VibeParamId::InputDrive:         return {"input_drive", "Input Drive", "x", VibeParamFlagNone};
+        case VibeParamId::OutputGain:         return {"output_gain", "Output Gain", "x", VibeParamFlagOutput};
+        case VibeParamId::SweepMin:           return {"sweep_min", "Sweep Min", "ratio", VibeParamFlagNone};
+        case VibeParamId::SweepMax:           return {"sweep_max", "Sweep Max", "ratio", VibeParamFlagNone};
+        case VibeParamId::LfoRateHz:          return {"lfo_rate_hz", "Rate", "Hz", VibeParamFlagLogScale};
+        case VibeParamId::DriftAmount:        return {"drift_amount", "Drift Amount", "ratio", VibeParamFlagNone};
+        case VibeParamId::DriftRateHz:        return {"drift_rate_hz", "Drift Rate", "Hz", VibeParamFlagLogScale};
+        case VibeParamId::PreHpfHz:           return {"pre_hpf_hz", "Pre HPF", "Hz", VibeParamFlagLogScale};
+        case VibeParamId::ToneTilt:           return {"tone_tilt", "Tone Tilt", "signed_ratio", VibeParamFlagNone};
+        case VibeParamId::SatAsymmetry:       return {"sat_asymmetry", "Saturation Asymmetry", "signed_ratio", VibeParamFlagNone};
+        case VibeParamId::SatOutTrim:         return {"sat_out_trim", "Saturation Trim", "x", VibeParamFlagOutput};
+        case VibeParamId::StereoWidth:        return {"stereo_width", "Stereo Width", "ratio", VibeParamFlagNone};
+        case VibeParamId::LampLag:            return {"lamp_lag", "Lamp Lag", "x", VibeParamFlagNone};
+        case VibeParamId::TempoSync:          return {"tempo_sync", "Tempo Sync", "switch", static_cast<uint8_t>(VibeParamFlagBoolean | VibeParamFlagTempo)};
+        case VibeParamId::TempoBpm:           return {"tempo_bpm", "Tempo BPM", "BPM", VibeParamFlagTempo};
+        case VibeParamId::TempoDivisionBeats: return {"tempo_division_beats", "Tempo Division", "beats", VibeParamFlagTempo};
+        case VibeParamId::NoiseAmount:        return {"noise_amount", "Noise", "ratio", VibeParamFlagNone};
+        default:                              return {"unknown", "Unknown", "", VibeParamFlagNone};
+    }
+}
+
 static inline VibeParamSpec vibe_param_spec(VibeParamId id) {
     switch (id) {
         case VibeParamId::Depth:      return {0.0f, 1.0f, 0.85f};
