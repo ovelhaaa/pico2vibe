@@ -40,6 +40,7 @@ void print_usage() {
         << "  --tempo-sync              sincroniza rate ao BPM/divisao\n"
         << "  --tempo-bpm <30..300>     BPM usado com --tempo-sync\n"
         << "  --tempo-division-beats <0.25..16> beats por ciclo do LFO\n"
+        << "  --noise <0..1>            ruido analogico opcional\n"
         << "  --tone-tilt <-1..1>       (padrao: 0.0)\n"
         << "  --pre-hpf <8..160>        (padrao: 22)\n"
         << "  --seed <int>              (padrao: 1)\n"
@@ -186,6 +187,8 @@ int main(int argc, char** argv) {
                 params.tempo_bpm = std::stof(next());
             } else if (arg == "--tempo-division-beats") {
                 params.tempo_division_beats = std::stof(next());
+            } else if (arg == "--noise") {
+                params.noise_amount = std::stof(next());
             } else if (arg == "--tone-tilt") {
                 params.tone_tilt = std::stof(next());
             } else if (arg == "--pre-hpf") {
