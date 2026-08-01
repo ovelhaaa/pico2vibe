@@ -57,6 +57,20 @@ Workflow: `.github/workflows/web-pages.yml`
 
 The browser app loads the same C++ DSP core used by firmware via the exported C ABI in `web/wasm/vibe_wasm.cpp`.
 
+## VST3 plugin scaffold
+
+The repository now includes an optional JUCE wrapper in `plugin/juce`. Firmware remains the default build; the plugin can be configured without Pico SDK:
+
+```powershell
+cmake -S . -B build/vst -G Ninja ^
+  -DPICO2VIBE_BUILD_FIRMWARE=OFF ^
+  -DPICO2VIBE_BUILD_JUCE_PLUGIN=ON ^
+  -DPICO2VIBE_JUCE_DIR=C:/path/to/JUCE
+cmake --build build/vst -j
+```
+
+If JUCE is installed as a CMake package, omit `PICO2VIBE_JUCE_DIR`. The first wrapper exposes the shared DSP parameters, voicing, quality mode, factory presets, smoothed bypass and output metering for host-readiness testing.
+
 ## Sound design
 
 pico2vibe is a digital optical vibe inspired by classic Uni-Vibe circuits. It uses a four-stage phase network per channel, lamp/LDR-style inertia, component mismatch, nonlinear transistor-style drive and chorus/vibrato modes.
