@@ -16,7 +16,7 @@ class App:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         root.title("Univibe Offline GUI")
-        root.geometry("760x560")
+        root.geometry("760x590")
 
         self.cli_path = tk.StringVar(value=default_cli_path())
         self.input_path = tk.StringVar()
@@ -32,6 +32,7 @@ class App:
         self.tempo_sync = tk.StringVar(value="off")
         self.tempo_bpm = tk.StringVar(value="120")
         self.tempo_division_beats = tk.StringVar(value="1.0")
+        self.noise = tk.StringVar(value="0.0")
 
         frm = ttk.Frame(root, padding=12)
         frm.pack(fill=tk.BOTH, expand=True)
@@ -51,18 +52,19 @@ class App:
         self._row_entry(frm, 11, "Tempo sync", self.tempo_sync, combo=True, values=["off", "on"])
         self._row_entry(frm, 12, "Tempo BPM", self.tempo_bpm)
         self._row_entry(frm, 13, "Tempo beats/ciclo", self.tempo_division_beats)
+        self._row_entry(frm, 14, "Noise", self.noise)
 
         btns = ttk.Frame(frm)
-        btns.grid(row=15, column=0, columnspan=3, sticky="w", pady=(14, 8))
+        btns.grid(row=16, column=0, columnspan=3, sticky="w", pady=(14, 8))
 
         ttk.Button(btns, text="Processar", command=self.process).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(btns, text="Ouvir saida", command=self.play_output).pack(side=tk.LEFT)
 
         self.log = tk.Text(frm, height=9)
-        self.log.grid(row=16, column=0, columnspan=3, sticky="nsew")
+        self.log.grid(row=17, column=0, columnspan=3, sticky="nsew")
 
         frm.grid_columnconfigure(1, weight=1)
-        frm.grid_rowconfigure(16, weight=1)
+        frm.grid_rowconfigure(17, weight=1)
 
     def _row_file(self, parent, row, label, var, cmd):
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=(0, 10), pady=4)
@@ -121,6 +123,7 @@ class App:
             "--feedback", self.feedback.get().strip(),
             "--mix", self.mix.get().strip(),
             "--lamp-lag", self.lamp_lag.get().strip(),
+            "--noise", self.noise.get().strip(),
         ]
 
         stereo_width = self.stereo_width.get().strip()

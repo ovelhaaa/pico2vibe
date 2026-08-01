@@ -35,6 +35,7 @@ struct RunConfig {
     bool tempo_sync = false;
     float tempo_bpm = 120.0f;
     float tempo_division_beats = 1.0f;
+    float noise_amount = 0.0f;
 };
 
 struct FreqPoint {
@@ -57,6 +58,7 @@ void usage() {
         << "  --tempo-sync                   Sincroniza LFO ao BPM/divisao\n"
         << "  --tempo-bpm <30..300>          BPM usado com --tempo-sync\n"
         << "  --tempo-division-beats <0.25..16> Beats por ciclo do LFO\n"
+        << "  --noise <0..1>                 Ruido analogico opcional\n"
         << "  --help\n\n"
         << "Exemplo:\n"
         << "  dsp_validate --out-dir out/new --preset classic --preset deep\n"
@@ -604,6 +606,7 @@ void run_preset(const std::string& preset_name, const RunConfig& cfg) {
     params.tempo_sync = cfg.tempo_sync;
     params.tempo_bpm = cfg.tempo_bpm;
     params.tempo_division_beats = cfg.tempo_division_beats;
+    params.noise_amount = cfg.noise_amount;
     const fs::path root = cfg.out_dir / preset_name;
     const fs::path signal_dir = root / "signals";
     const fs::path metric_dir = root / "metrics";
@@ -717,6 +720,8 @@ RunConfig parse_args(int argc, char** argv) {
             cfg.tempo_bpm = std::stof(next());
         } else if (arg == "--tempo-division-beats") {
             cfg.tempo_division_beats = std::stof(next());
+        } else if (arg == "--noise") {
+            cfg.noise_amount = std::stof(next());
         } else {
             throw std::runtime_error("Argumento desconhecido: " + arg);
         }
