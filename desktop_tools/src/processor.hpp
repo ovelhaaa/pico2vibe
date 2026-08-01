@@ -50,6 +50,7 @@ struct UnivibeParams {
     bool tempo_sync = false;
     float tempo_bpm = 120.0f;
     float tempo_division_beats = 1.0f;
+    float noise_amount = 0.0f;
     float tone_tilt = 0.0f;
     float pre_hpf_hz = 22.0f;
     float sat_asymmetry = 0.08f;

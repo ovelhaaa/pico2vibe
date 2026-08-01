@@ -224,6 +224,7 @@ struct VibeUserParams {
     float lfo_rate_hz = 1.20f;
     float drift_amount = 0.018f;
     float drift_rate_hz = 0.08f;
+    float noise_amount = 0.0f;
     float lamp_lag = 1.0f;
     float tempo_sync = 0.0f;
     float tempo_bpm = 120.0f;
@@ -417,6 +418,7 @@ enum class VibeParamId : uint8_t {
     TempoSync,
     TempoBpm,
     TempoDivisionBeats,
+    NoiseAmount,
 };
 
 struct VibeParamSpec {
@@ -446,6 +448,7 @@ static inline VibeParamSpec vibe_param_spec(VibeParamId id) {
         case VibeParamId::TempoSync:  return {0.0f, 1.0f, 0.0f};
         case VibeParamId::TempoBpm:   return {30.0f, 300.0f, 120.0f};
         case VibeParamId::TempoDivisionBeats:return {0.25f, 16.0f, 1.0f};
+        case VibeParamId::NoiseAmount:return {0.0f, 1.0f, 0.0f};
         default:                      return {0.0f, 1.0f, 0.0f};
     }
 }
@@ -462,6 +465,7 @@ static inline float *vibe_param_slot(VibeUserParams &params, VibeParamId id) {
         case VibeParamId::LfoRateHz:   return &params.lfo_rate_hz;
         case VibeParamId::DriftAmount: return &params.drift_amount;
         case VibeParamId::DriftRateHz: return &params.drift_rate_hz;
+        case VibeParamId::NoiseAmount: return &params.noise_amount;
         case VibeParamId::PreHpfHz:    return &params.pre_hpf_hz;
         case VibeParamId::ToneTilt:    return &params.tone_tilt;
         case VibeParamId::SatAsymmetry:return &params.sat_asymmetry;
@@ -487,6 +491,7 @@ static inline const float *vibe_param_slot(const VibeUserParams &params, VibePar
         case VibeParamId::LfoRateHz:   return &params.lfo_rate_hz;
         case VibeParamId::DriftAmount: return &params.drift_amount;
         case VibeParamId::DriftRateHz: return &params.drift_rate_hz;
+        case VibeParamId::NoiseAmount: return &params.noise_amount;
         case VibeParamId::PreHpfHz:    return &params.pre_hpf_hz;
         case VibeParamId::ToneTilt:    return &params.tone_tilt;
         case VibeParamId::SatAsymmetry:return &params.sat_asymmetry;
@@ -512,6 +517,7 @@ static inline void sanitize_user_params(VibeUserParams *params) {
     params->lfo_rate_hz = clampf(params->lfo_rate_hz, kLfoRateMinHz, kLfoRateMaxHz);
     params->drift_amount = clampf(params->drift_amount, 0.0f, 0.05f);
     params->drift_rate_hz = clampf(params->drift_rate_hz, 0.005f, 0.5f);
+    params->noise_amount = clampf(params->noise_amount, 0.0f, 1.0f);
     params->lamp_lag = clampf(params->lamp_lag, 0.35f, 2.50f);
     params->tempo_sync = clampf(params->tempo_sync, 0.0f, 1.0f);
     params->tempo_bpm = clampf(params->tempo_bpm, 30.0f, 300.0f);
@@ -1119,6 +1125,7 @@ private:
     float ecn0[8], ecn1[8], ecd0[8], ecd1[8];
     float on0[8], on1[8], od0[8], od1[8];
     uint32_t rng_seed = 0x13579BDFu;
+    uint32_t noise_rng = 0xC0FFEE23u;
     VibeUserParams smoothed_user;
     float output_trim_smoothed = 1.0f;
     float pre_hpf_x1_l = 0.0f, pre_hpf_y1_l = 0.0f;
@@ -1129,6 +1136,7 @@ private:
     float input_env_l = 0.0f, input_env_r = 0.0f;
     float wet_env_l = 0.0f, wet_env_r = 0.0f;
     float tone_lp_l = 0.0f, tone_lp_r = 0.0f;
+    float noise_color_l = 0.0f, noise_color_r = 0.0f;
     float wet_smooth_l = 0.0f, wet_smooth_r = 0.0f;
     float lamp_memory_l = 0.0f, lamp_memory_r = 0.0f;
     float channel_lamp_slew_l = 1.0f, channel_lamp_slew_r = 1.0f;
@@ -1565,6 +1573,7 @@ void Vibe::update_smoothed_user_params() {
     smooth_to_target(smoothed_user.lfo_rate_hz, params.user.lfo_rate_hz);
     smooth_to_target(smoothed_user.drift_amount, params.user.drift_amount);
     smooth_to_target(smoothed_user.drift_rate_hz, params.user.drift_rate_hz);
+    smooth_to_target(smoothed_user.noise_amount, params.user.noise_amount);
     smooth_to_target(smoothed_user.lamp_lag, params.user.lamp_lag);
     smooth_to_target(smoothed_user.tempo_sync, params.user.tempo_sync);
     smooth_to_target(smoothed_user.tempo_bpm, params.user.tempo_bpm);
@@ -1769,6 +1778,9 @@ void Vibe::reset_audio_state(bool reset_lfo) {
     wet_smooth_r = 0.0f;
     tone_lp_l = 0.0f;
     tone_lp_r = 0.0f;
+    noise_color_l = 0.0f;
+    noise_color_r = 0.0f;
+    noise_rng = rng_seed ^ 0x9E3779B9u;
     pre_hpf_x1_l = 0.0f;
     pre_hpf_y1_l = 0.0f;
     pre_hpf_x1_r = 0.0f;
@@ -1920,6 +1932,8 @@ void Vibe::out(float *smpsl, float *smpsr) {
     const float chorus_notch_depth = mode_chorus ? clampf(params.musical.chorus_notch_depth, 0.0f, 1.25f) : 0.0f;
     const float chorus_stereo_focus = mode_chorus ? clampf(params.musical.chorus_stereo_focus, 0.0f, 1.0f) : 0.0f;
     const float mono_compat = mode_chorus ? clampf(params.musical.mono_compat, 0.0f, 1.0f) : 0.0f;
+    const float noise_amount = clampf(smoothed_user.noise_amount, 0.0f, 1.0f);
+    const float noise_gain_base = noise_amount * noise_amount * 0.0019f;
     constexpr float kInvDefaultLdrCurve = 1.0f / 7.6009f;
     const float ldr_curve_scale = clampf(params.tuning.ldr_curve, 0.1f, 24.0f) * kInvDefaultLdrCurve;
     const float fb_lim_threshold = 0.78f + 0.06f * (1.0f - auto_level);
@@ -2170,7 +2184,24 @@ void Vibe::out(float *smpsl, float *smpsr) {
 
         const float mixed_l = mode_chorus ? (dry_raw_l * dry_gain + wet_l * wet_gain) : wet_l;
         const float mixed_r = mode_chorus ? (dry_raw_r * dry_gain + wet_r * wet_gain) : wet_r;
-        efxoutl[i] = final_gain * lpanning * mixed_l;
-        efxoutr[i] = final_gain * rpanning * mixed_r;
+
+        float noise_l = 0.0f;
+        float noise_r = 0.0f;
+        if (noise_gain_base > 1.0e-9f) {
+            const float white_l = noise_bipolar(noise_rng);
+            const float white_r = 0.82f * noise_bipolar(noise_rng) + 0.18f * white_l;
+            noise_color_l += 0.024f * (white_l - noise_color_l);
+            noise_color_r += 0.024f * (white_r - noise_color_r);
+            const float hiss_l = white_l - 0.68f * noise_color_l;
+            const float hiss_r = white_r - 0.68f * noise_color_r;
+            const float drive_noise = 0.72f + 0.28f * clampf((input_drive - 0.5f) * (1.0f / 5.5f), 0.0f, 1.0f);
+            const float lamp_noise = 0.82f + 0.18f * lamp_hot;
+            const float noise_gain = noise_gain_base * drive_noise * lamp_noise * (0.45f + 0.55f * mix);
+            noise_l = noise_gain * (0.58f * noise_color_l + 0.42f * hiss_l);
+            noise_r = noise_gain * (0.58f * noise_color_r + 0.42f * hiss_r);
+        }
+
+        efxoutl[i] = final_gain * lpanning * (mixed_l + noise_l);
+        efxoutr[i] = final_gain * rpanning * (mixed_r + noise_r);
     }
 }
