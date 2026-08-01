@@ -2080,9 +2080,10 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float pre_hpf_hz = pre_hpf_ramp.tick();
         const float tone_tilt = tone_tilt_ramp.tick();
         const float mix_center = 4.0f * mix * (1.0f - mix);
-        const float notch_focus = clampf(chorus_notch_depth * depth * mix_center, 0.0f, 1.15f);
-        const float wet_gain_raw = fast_sqrt01(mix) * (1.0f + 0.18f * notch_focus);
-        const float dry_gain_raw = fast_sqrt01(1.0f - mix) * (1.0f - 0.055f * notch_focus * mix);
+        const float notch_mix_window = 0.20f + 0.80f * mix_center;
+        const float notch_focus = clampf(chorus_notch_depth * depth * notch_mix_window, 0.0f, 1.20f);
+        const float wet_gain_raw = fast_sqrt01(mix) * (1.0f + 0.22f * notch_focus * (0.70f + 0.30f * chorus_stereo_focus));
+        const float dry_gain_raw = fast_sqrt01(1.0f - mix) * (1.0f - 0.070f * notch_focus * (0.35f + 0.65f * mix));
         const float mix_power_norm = mode_chorus ? (1.0f / sqrtf(fmaxf(0.20f, dry_gain_raw * dry_gain_raw + wet_gain_raw * wet_gain_raw))) : 1.0f;
         const float wet_gain = wet_gain_raw * mix_power_norm;
         const float dry_gain = dry_gain_raw * mix_power_norm;
@@ -2192,10 +2193,11 @@ void Vibe::out(float *smpsl, float *smpsr) {
         // Wet-only mid/side focus adds width while keeping wide voices useful in mono.
         const float wet_mid = 0.5f * (wet_l + wet_r);
         const float wet_side_raw = 0.5f * (wet_l - wet_r);
-        const float side_focus = 1.0f + 0.10f * chorus_stereo_focus * notch_focus;
         const float wide_voice = clampf((stereo_width - 0.70f) * (1.0f / 0.55f), 0.0f, 1.0f);
         const float guard_amount = mono_compat * wide_voice * (0.45f + 0.55f * chorus_stereo_focus);
-        const float wet_side_width = clampf(classic_stereo_reduction * side_focus * (1.0f - 0.12f * guard_amount * depth), 0.0f, 1.25f);
+        const float guarded_focus = 1.0f - 0.35f * guard_amount;
+        const float side_focus = 1.0f + 0.13f * chorus_stereo_focus * notch_focus * clampf(guarded_focus, 0.55f, 1.0f);
+        const float wet_side_width = clampf(classic_stereo_reduction * side_focus * (1.0f - 0.16f * guard_amount * depth), 0.0f, 1.22f);
         const float wet_side = wet_side_raw * wet_side_width;
         const float wet_mid_anchor = 1.0f + depth * ((0.045f * chorus_stereo_focus * (0.55f + 0.45f * mix_center))
                                                      + (0.035f * mono_compat * wide_voice));

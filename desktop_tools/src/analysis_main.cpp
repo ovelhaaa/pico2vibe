@@ -36,6 +36,8 @@ struct RunConfig {
     float tempo_bpm = 120.0f;
     float tempo_division_beats = 1.0f;
     float noise_amount = 0.0f;
+    bool calibration_suite = false;
+    bool write_mix_sweep = false;
 };
 
 struct FreqPoint {
@@ -51,6 +53,7 @@ void usage() {
         << "Opcoes:\n"
         << "  --out-dir <pasta>              Pasta de saida (padrao: analysis_out)\n"
         << "  --preset <nome>                Pode repetir. Presets: classic, subtle, deep, vibrato, vintage, hendrix, trower, gentle, stereo, vintage_vibrato, always_on, slow_sweep, rotary, bass_synth, lo_fi, hifi\n"
+        << "                                  Aliases de calibracao: classic_univibe, shin_ei_dark, voodoo_wide, deja_vibe\n"
         << "  --levels-db <lista>            Ex: -24,-18,-12,-6,0\n"
         << "  --sweep-seconds <seg>          Duracao do sweep (padrao: 8)\n"
         << "  --compare-to <pasta>           Pasta de baseline para gerar diff de summary\n"
@@ -59,6 +62,8 @@ void usage() {
         << "  --tempo-bpm <30..300>          BPM usado com --tempo-sync\n"
         << "  --tempo-division-beats <0.25..16> Beats por ciclo do LFO\n"
         << "  --noise <0..1>                 Ruido analogico opcional\n"
+        << "  --calibration-suite            Roda voicings de referencia e gera calibration_summary.csv\n"
+        << "  --mix-sweep                    Mede notch/mono/imagem em varios pontos de mix\n"
         << "  --help\n\n"
         << "Exemplo:\n"
         << "  dsp_validate --out-dir out/new --preset classic --preset deep\n"
@@ -70,6 +75,10 @@ UnivibeParams::QualityMode parse_quality(const std::string& name) {
     if (name == "standard") return UnivibeParams::QualityMode::standard;
     if (name == "high") return UnivibeParams::QualityMode::high;
     throw std::runtime_error("Qualidade invalida: " + name);
+}
+
+std::vector<std::string> calibration_presets() {
+    return {"classic_univibe", "shin_ei_dark", "deja_vibe", "voodoo_wide", "hifi", "vibrato"};
 }
 
 std::vector<float> parse_list(const std::string& csv) {
@@ -85,7 +94,7 @@ std::vector<float> parse_list(const std::string& csv) {
 
 UnivibeParams preset_params(const std::string& name) {
     UnivibeParams p;
-    if (name == "classic") {
+    if (name == "classic" || name == "classic_univibe") {
         p.preset = UnivibeParams::Preset::classic_chorus;
         p.mode_chorus = true;
         p.rate_hz = 0.85f;
@@ -113,6 +122,47 @@ UnivibeParams preset_params(const std::string& name) {
         p.depth = 0.72f;
         p.feedback = 0.25f;
         p.mix = 1.0f;
+    } else if (name == "shin_ei_dark") {
+        p.preset = UnivibeParams::Preset::vintage_univibe_chorus;
+        p.mode_chorus = true;
+        p.rate_hz = 0.92f;
+        p.depth = 0.84f;
+        p.feedback = 0.38f;
+        p.mix = 0.56f;
+        p.input_drive = 1.95f;
+        p.output_gain = 0.96f;
+        p.pre_hpf_hz = 18.0f;
+        p.tone_tilt = -0.26f;
+        p.sat_asymmetry = 0.055f;
+        p.sat_out_trim = 0.92f;
+    } else if (name == "voodoo_wide") {
+        p.preset = UnivibeParams::Preset::wide_stereo_dream;
+        p.mode_chorus = true;
+        p.rate_hz = 0.78f;
+        p.depth = 0.72f;
+        p.feedback = 0.24f;
+        p.mix = 0.62f;
+        p.input_drive = 1.55f;
+        p.output_gain = 0.95f;
+        p.stereo_width = 1.12f;
+        p.override_stereo_width = true;
+        p.pre_hpf_hz = 20.0f;
+        p.tone_tilt = 0.02f;
+        p.sat_asymmetry = 0.055f;
+        p.sat_out_trim = 0.86f;
+    } else if (name == "deja_vibe") {
+        p.preset = UnivibeParams::Preset::trower_lead;
+        p.mode_chorus = true;
+        p.rate_hz = 1.35f;
+        p.depth = 0.76f;
+        p.feedback = 0.34f;
+        p.mix = 0.50f;
+        p.input_drive = 1.85f;
+        p.output_gain = 0.96f;
+        p.pre_hpf_hz = 24.0f;
+        p.tone_tilt = -0.10f;
+        p.sat_asymmetry = 0.065f;
+        p.sat_out_trim = 0.90f;
     } else if (name == "vintage") {
         p.preset = UnivibeParams::Preset::vintage_univibe_chorus;
         p.mode_chorus = true;
@@ -591,6 +641,139 @@ void write_summary_diff(const fs::path& baseline,
     }
 }
 
+struct CalibrationMetrics {
+    std::string preset;
+    float score = 0.0f;
+    float deepest_notch_db = 0.0f;
+    float notch_span_oct = 0.0f;
+    float notch_count = 0.0f;
+    float side_to_mid_db = -120.0f;
+    float mono_fold_db = -120.0f;
+    float lr_correlation = 0.0f;
+    float worst_thd_db = -120.0f;
+    float alias_proxy_db = -120.0f;
+};
+
+struct CalibrationTarget {
+    float deepest_notch_db = -6.0f;
+    float side_min_db = -30.0f;
+    float side_max_db = -8.0f;
+    float mono_fold_min_db = -3.0f;
+    float correlation_min = 0.25f;
+    float alias_max_db = -68.0f;
+};
+
+float summary_value(const std::map<std::string, float>& summary, const std::string& key, float fallback = 0.0f) {
+    const auto it = summary.find(key);
+    return (it == summary.end()) ? fallback : it->second;
+}
+
+float range_penalty(float v, float lo, float hi) {
+    if (v < lo) return lo - v;
+    if (v > hi) return v - hi;
+    return 0.0f;
+}
+
+CalibrationTarget calibration_target(const std::string& preset) {
+    if (preset == "shin_ei_dark") return {-9.0f, -32.0f, -13.0f, -3.0f, 0.30f, -68.0f};
+    if (preset == "voodoo_wide") return {-6.5f, -20.0f, -7.0f, -3.5f, 0.18f, -68.0f};
+    if (preset == "deja_vibe") return {-7.5f, -28.0f, -11.0f, -3.0f, 0.32f, -68.0f};
+    if (preset == "hifi") return {-5.5f, -24.0f, -9.0f, -2.5f, 0.45f, -74.0f};
+    if (preset == "vibrato" || preset == "vintage_vibrato") return {-2.0f, -120.0f, 0.0f, -4.0f, 0.0f, -68.0f};
+    return {-7.0f, -30.0f, -12.0f, -3.0f, 0.30f, -68.0f};
+}
+
+float calibration_score(const CalibrationMetrics& m, const CalibrationTarget& t) {
+    const float notch_penalty = std::max(0.0f, m.deepest_notch_db - t.deepest_notch_db);
+    const float side_penalty = range_penalty(m.side_to_mid_db, t.side_min_db, t.side_max_db);
+    const float mono_penalty = std::max(0.0f, t.mono_fold_min_db - m.mono_fold_db);
+    const float corr_penalty = std::max(0.0f, t.correlation_min - m.lr_correlation);
+    const float alias_penalty = std::max(0.0f, m.alias_proxy_db - t.alias_max_db);
+    const float score = 100.0f
+                        - 5.0f * notch_penalty
+                        - 2.0f * side_penalty
+                        - 8.0f * mono_penalty
+                        - 20.0f * corr_penalty
+                        - 0.7f * alias_penalty;
+    return std::max(0.0f, std::min(100.0f, score));
+}
+
+CalibrationMetrics build_calibration_metrics(const std::string& preset,
+                                             const std::map<std::string, float>& summary) {
+    CalibrationMetrics m;
+    m.preset = preset;
+    m.deepest_notch_db = summary_value(summary, "deepest_tracked_notch_db");
+    m.notch_span_oct = summary_value(summary, "tracked_notch_span_oct");
+    m.notch_count = summary_value(summary, "tracked_notch_count");
+    m.side_to_mid_db = summary_value(summary, "guitar_side_to_mid_db", -120.0f);
+    m.mono_fold_db = summary_value(summary, "guitar_mono_fold_db", -120.0f);
+    m.lr_correlation = summary_value(summary, "guitar_lr_correlation");
+    m.worst_thd_db = summary_value(summary, "worst_thd_db", -120.0f);
+    m.alias_proxy_db = summary_value(summary, "guitar_alias_proxy_db", -120.0f);
+    m.score = calibration_score(m, calibration_target(preset));
+    return m;
+}
+
+void write_calibration_score(const fs::path& path, const CalibrationMetrics& m) {
+    std::ofstream out(path);
+    if (!out) throw std::runtime_error("Falha escrevendo CSV: " + path.string());
+    out << "metric,value\n";
+    out << std::fixed << std::setprecision(6);
+    out << "calibration_score," << m.score << "\n";
+    out << "deepest_notch_db," << m.deepest_notch_db << "\n";
+    out << "tracked_notch_span_oct," << m.notch_span_oct << "\n";
+    out << "tracked_notch_count," << m.notch_count << "\n";
+    out << "guitar_side_to_mid_db," << m.side_to_mid_db << "\n";
+    out << "guitar_mono_fold_db," << m.mono_fold_db << "\n";
+    out << "guitar_lr_correlation," << m.lr_correlation << "\n";
+    out << "worst_thd_db," << m.worst_thd_db << "\n";
+    out << "guitar_alias_proxy_db," << m.alias_proxy_db << "\n";
+}
+
+void write_calibration_summary(const fs::path& path, const std::vector<CalibrationMetrics>& rows) {
+    std::ofstream out(path);
+    if (!out) throw std::runtime_error("Falha escrevendo CSV: " + path.string());
+    out << "preset,score,deepest_notch_db,tracked_notch_span_oct,tracked_notch_count,guitar_side_to_mid_db,guitar_mono_fold_db,guitar_lr_correlation,worst_thd_db,guitar_alias_proxy_db\n";
+    out << std::fixed << std::setprecision(6);
+    for (const auto& m : rows) {
+        out << m.preset << ',' << m.score << ',' << m.deepest_notch_db << ',' << m.notch_span_oct << ','
+            << m.notch_count << ',' << m.side_to_mid_db << ',' << m.mono_fold_db << ','
+            << m.lr_correlation << ',' << m.worst_thd_db << ',' << m.alias_proxy_db << "\n";
+    }
+}
+
+void write_mix_sweep_report(const fs::path& path,
+                            const UnivibeParams& base_params,
+                            const RunConfig& cfg) {
+    std::ofstream out(path);
+    if (!out) throw std::runtime_error("Falha escrevendo CSV: " + path.string());
+    out << "mix,deepest_notch_db,tracked_notch_count,sweep_side_to_mid_db,sweep_mono_fold_db,sweep_lr_correlation\n";
+    out << std::fixed << std::setprecision(6);
+
+    if (!base_params.mode_chorus) {
+        return;
+    }
+
+    const float mixes[] = {0.20f, 0.35f, 0.50f, 0.65f, 0.80f};
+    const auto sweep_in = generate_log_sweep(20.0f, 12000.0f, cfg.sweep_seconds);
+    for (float mix : mixes) {
+        UnivibeParams params = base_params;
+        params.mix = mix;
+        auto sweep_out = sweep_in;
+        process(params, sweep_out);
+        const auto fr = frequency_response_from_sweep(sweep_in.left, sweep_out.left, cfg.sweep_seconds, 20.0f, 12000.0f, 120);
+        const auto notch = notch_tracking_from_sweep(fr);
+        const auto image = stereo_image_metrics(sweep_out);
+        float deepest = 0.0f;
+        if (!notch.empty()) {
+            deepest = notch[0].gain_db;
+            for (const auto& n : notch) deepest = std::min(deepest, n.gain_db);
+        }
+        out << mix << ',' << deepest << ',' << static_cast<float>(notch.size()) << ','
+            << image.side_to_mid_db << ',' << image.mono_fold_db << ',' << image.lr_correlation << "\n";
+    }
+}
+
 void write_signal_pair(const fs::path& dir,
                        const std::string& base_name,
                        const StereoBuffer& in,
@@ -600,7 +783,7 @@ void write_signal_pair(const fs::path& dir,
     write_wav_file_float32((dir / (base_name + "_out.wav")).string(), out);
 }
 
-void run_preset(const std::string& preset_name, const RunConfig& cfg) {
+CalibrationMetrics run_preset(const std::string& preset_name, const RunConfig& cfg) {
     UnivibeParams params = preset_params(preset_name);
     params.quality_mode = cfg.quality_mode;
     params.tempo_sync = cfg.tempo_sync;
@@ -672,20 +855,44 @@ void run_preset(const std::string& preset_name, const RunConfig& cfg) {
     summary["sweep_lr_correlation"] = sweep_image.lr_correlation;
 
     float notch_min_db = 0.0f;
+    float notch_sum_db = 0.0f;
+    float notch_low_hz = 0.0f;
+    float notch_high_hz = 0.0f;
     if (!notch.empty()) {
         notch_min_db = notch[0].gain_db;
-        for (const auto& n : notch) notch_min_db = std::min(notch_min_db, n.gain_db);
+        notch_low_hz = notch[0].freq_hz;
+        notch_high_hz = notch[0].freq_hz;
+        for (const auto& n : notch) {
+            notch_min_db = std::min(notch_min_db, n.gain_db);
+            notch_sum_db += n.gain_db;
+            notch_low_hz = std::min(notch_low_hz, n.freq_hz);
+            notch_high_hz = std::max(notch_high_hz, n.freq_hz);
+        }
     }
+    const float notch_avg_db = notch.empty() ? 0.0f : notch_sum_db / static_cast<float>(notch.size());
+    const float notch_span_oct = (notch_low_hz > 0.0f && notch_high_hz > notch_low_hz)
+                                 ? std::log2(notch_high_hz / notch_low_hz)
+                                 : 0.0f;
     summary["deepest_tracked_notch_db"] = notch_min_db;
+    summary["average_tracked_notch_db"] = notch_avg_db;
+    summary["tracked_notch_low_hz"] = notch_low_hz;
+    summary["tracked_notch_high_hz"] = notch_high_hz;
+    summary["tracked_notch_span_oct"] = notch_span_oct;
     summary["tracked_notch_count"] = static_cast<float>(notch.size());
 
+    const CalibrationMetrics calibration = build_calibration_metrics(preset_name, summary);
     write_summary(metric_dir / "summary.csv", summary);
+    write_calibration_score(metric_dir / "calibration_score.csv", calibration);
+    if (cfg.write_mix_sweep) {
+        write_mix_sweep_report(metric_dir / "mix_sweep.csv", params, cfg);
+    }
 
     if (!cfg.compare_to.empty()) {
         write_summary_diff(cfg.compare_to / preset_name / "metrics" / "summary.csv",
                            metric_dir / "summary.csv",
                            metric_dir / "summary_vs_baseline.csv");
     }
+    return calibration;
 }
 
 RunConfig parse_args(int argc, char** argv) {
@@ -722,6 +929,12 @@ RunConfig parse_args(int argc, char** argv) {
             cfg.tempo_division_beats = std::stof(next());
         } else if (arg == "--noise") {
             cfg.noise_amount = std::stof(next());
+        } else if (arg == "--calibration-suite") {
+            cfg.calibration_suite = true;
+            cfg.presets = calibration_presets();
+            cfg.write_mix_sweep = true;
+        } else if (arg == "--mix-sweep") {
+            cfg.write_mix_sweep = true;
         } else {
             throw std::runtime_error("Argumento desconhecido: " + arg);
         }
@@ -739,10 +952,16 @@ int main(int argc, char** argv) {
         fs::create_directories(cfg.out_dir);
 
         std::cout << "Rodando harness offline (sr=" << kSampleRate << ") em: " << cfg.out_dir.string() << "\n";
+        if (cfg.calibration_suite) {
+            std::cout << "  suite de calibracao: referencias pre-VST\n";
+        }
+        std::vector<CalibrationMetrics> calibration_rows;
+        calibration_rows.reserve(cfg.presets.size());
         for (const auto& p : cfg.presets) {
             std::cout << "  preset: " << p << "\n";
-            run_preset(p, cfg);
+            calibration_rows.push_back(run_preset(p, cfg));
         }
+        write_calibration_summary(cfg.out_dir / "calibration_summary.csv", calibration_rows);
         std::cout << "Concluido. Veja WAVs e CSVs em: " << cfg.out_dir.string() << "\n";
         return 0;
     } catch (const std::exception& e) {

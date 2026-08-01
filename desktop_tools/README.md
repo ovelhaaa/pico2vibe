@@ -63,13 +63,15 @@ Ferramenta para regressão de DSP. Ela:
    - seno em múltiplos níveis
    - sweep logarítmico
    - tom sintético tipo guitarra
-2. Processa offline por preset/voicing (`classic`, `subtle`, `deep`, `vibrato`).
+2. Processa offline por preset/voicing (`classic`, `subtle`, `deep`, `vibrato`) ou por aliases de calibracao pre-VST (`classic_univibe`, `shin_ei_dark`, `deja_vibe`, `voodoo_wide`).
 3. Exporta WAV de entrada/saída e CSV com métricas.
 4. Mede/loga:
    - resposta em frequência aproximada (`frequency_response.csv`)
    - rastreamento aproximado de notch no tempo (`notch_tracking.csv`)
    - THD por nível de drive (nível de entrada) (`thd_vs_drive.csv`)
    - energia de alta frequência (proxy de aliasing) (`summary.csv`, `thd_vs_drive.csv`)
+   - score de calibracao por voicing (`calibration_score.csv`, `calibration_summary.csv`)
+   - sweep de interacao dry/wet quando `--mix-sweep` esta ativo (`mix_sweep.csv`)
 5. Facilita A/B com baseline via `--compare-to`.
 
 ### Exemplo rápido
@@ -88,6 +90,11 @@ build/desktop_tools/dsp_validate.exe ^
   --tempo-bpm 96 ^
   --tempo-division-beats 2 ^
   --noise 0.08
+
+build/desktop_tools/dsp_validate.exe ^
+  --out-dir analysis/calibration ^
+  --calibration-suite ^
+  --quality high
 ```
 
 ### Exemplo A/B (old vs new)
@@ -106,6 +113,9 @@ Isso gera, por preset:
 - `metrics/notch_tracking.csv`
 - `metrics/thd_vs_drive.csv`
 - `metrics/summary.csv`
+- `metrics/calibration_score.csv`
+- `metrics/mix_sweep.csv` (quando `--mix-sweep` ou `--calibration-suite` é usado)
+- `calibration_summary.csv` na pasta raiz de saída
 - `metrics/summary_vs_baseline.csv` (quando `--compare-to` é usado)
 
 ## Manifesto de parâmetros para VST
