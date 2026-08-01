@@ -156,6 +156,7 @@ struct DesktopUnivibeProcessor::Impl {
         improved->set_param(VibeParamId::TempoSync, p.tempo_sync ? 1.0f : 0.0f);
         improved->set_param(VibeParamId::TempoBpm, p.tempo_bpm);
         improved->set_param(VibeParamId::TempoDivisionBeats, p.tempo_division_beats);
+        improved->set_param(VibeParamId::NoiseAmount, p.noise_amount);
         improved->set_param(VibeParamId::ToneTilt, p.tone_tilt);
         improved->set_param(VibeParamId::PreHpfHz, p.pre_hpf_hz);
         improved->set_param(VibeParamId::SatAsymmetry, p.sat_asymmetry);
@@ -178,6 +179,7 @@ struct DesktopUnivibeProcessor::Impl {
             legacy->set_param(VibeParamId::TempoSync, p.tempo_sync ? 1.0f : 0.0f);
             legacy->set_param(VibeParamId::TempoBpm, p.tempo_bpm);
             legacy->set_param(VibeParamId::TempoDivisionBeats, p.tempo_division_beats);
+            legacy->set_param(VibeParamId::NoiseAmount, p.noise_amount);
             legacy->set_param(VibeParamId::Depth, p.depth);
             legacy->set_param(VibeParamId::Feedback, p.feedback);
             legacy->set_param(VibeParamId::Mix, p.mix);
@@ -231,6 +233,9 @@ DesktopUnivibeProcessor::DesktopUnivibeProcessor(const UnivibeParams& params) {
     }
     if (params.tempo_division_beats < 0.25f || params.tempo_division_beats > 16.0f) {
         throw std::runtime_error("tempo_division_beats fora do intervalo [0.25..16]");
+    }
+    if (params.noise_amount < 0.0f || params.noise_amount > 1.0f) {
+        throw std::runtime_error("noise_amount fora do intervalo [0..1]");
     }
 
     impl_ = new Impl(params);
