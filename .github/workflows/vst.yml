@@ -1,0 +1,78 @@
+name: Build VST3
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "CMakeLists.txt"
+      - "plugin/**"
+      - "src/dsp/**"
+      - ".github/workflows/vst.yml"
+  pull_request:
+    paths:
+      - "CMakeLists.txt"
+      - "plugin/**"
+      - "src/dsp/**"
+      - ".github/workflows/vst.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vst3-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUILD_DIR: build/vst
+  JUCE_VERSION: 7.0.12
+  VST3_DIR: build/vst/plugin/juce/Pico2VibePlugin_artefacts/Release/VST3
+
+jobs:
+  build-vst3-windows:
+    name: Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout pico2vibe
+        uses: actions/checkout@v4
+
+      - name: Checkout JUCE
+        uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: ${{ env.JUCE_VERSION }}
+          path: JUCE
+
+      - name: Configure
+        shell: pwsh
+        run: >-
+          cmake -S . -B $env:BUILD_DIR -G "Visual Studio 17 2022" -A x64
+          -DPICO2VIBE_BUILD_FIRMWARE=OFF
+          -DPICO2VIBE_BUILD_JUCE_PLUGIN=ON
+          -DPICO2VIBE_JUCE_DIR="$env:GITHUB_WORKSPACE/JUCE"
+
+      - name: Build VST3
+        shell: pwsh
+        run: cmake --build $env:BUILD_DIR --config Release --parallel
+
+      - name: Verify bundle
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $env:GITHUB_WORKSPACE "$env:VST3_DIR/pico2vibe.vst3"
+          $binary = Join-Path $bundle "Contents/x86_64-win/pico2vibe.vst3"
+
+          if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
+            throw "VST3 binary not found: $binary"
+          }
+
+          Get-ChildItem -LiteralPath $bundle -Recurse | Select-Object FullName, Length
+
+      - name: Upload VST3 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pico2vibe-vst3-windows-x64
+          path: ${{ env.VST3_DIR }}/pico2vibe.vst3
+          if-no-files-found: error
+          retention-days: 14

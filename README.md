@@ -71,6 +71,8 @@ cmake --build build/vst -j
 
 If JUCE is installed as a CMake package, omit `PICO2VIBE_JUCE_DIR`. The first wrapper exposes the shared DSP parameters, voicing, quality mode, factory presets, smoothed bypass and output metering for host-readiness testing.
 
+The `.github/workflows/vst.yml` workflow builds the Windows x64 VST3 on relevant pushes and pull requests, or on demand. Successful runs publish the complete plugin bundle as the `pico2vibe-vst3-windows-x64` artifact.
+
 ## Sound design
 
 pico2vibe is a digital optical vibe inspired by classic Uni-Vibe circuits. It uses a four-stage phase network per channel, lamp/LDR-style inertia, component mismatch, nonlinear transistor-style drive and chorus/vibrato modes.
