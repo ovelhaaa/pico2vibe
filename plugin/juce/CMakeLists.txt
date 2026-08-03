@@ -37,3 +37,20 @@ target_compile_definitions(Pico2VibePlugin
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0)
+
+if(BUILD_TESTING)
+  add_executable(Pico2VibePluginTests
+    PluginSmokeTest.cpp)
+
+  target_include_directories(Pico2VibePluginTests
+    PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}
+      ${CMAKE_CURRENT_BINARY_DIR}/Pico2VibePlugin_artefacts/JuceLibraryCode
+      ${JUCE_MODULES_DIR})
+
+  target_link_libraries(Pico2VibePluginTests
+    PRIVATE
+      Pico2VibePlugin)
+
+  add_test(NAME juce_plugin_smoke_test COMMAND Pico2VibePluginTests)
+endif()

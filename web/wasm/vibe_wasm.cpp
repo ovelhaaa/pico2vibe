@@ -90,7 +90,7 @@ void vibe_process_stereo(VibeHandle* h, const float* in_l, const float* in_r, fl
       std::memset(block_r, 0, sizeof(block_r));
       std::memcpy(block_l, in_l + pos, n * sizeof(float));
       std::memcpy(block_r, in_r + pos, n * sizeof(float));
-      h->engine.out(block_l, block_r);
+      h->engine.out(block_l, block_r, static_cast<int>(n));
       if (h->output_conditioning) {
         for (uint32_t i = 0; i < n; ++i) {
           h->output_conditioner.process_frame(h->out_l[i], h->out_r[i], out_l + pos + i, out_r + pos + i);

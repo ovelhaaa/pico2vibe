@@ -12,6 +12,7 @@ namespace {
 constexpr const char* kVoicingParamId = "voicing";
 constexpr const char* kQualityParamId = "quality";
 constexpr const char* kBypassParamId = "bypass";
+constexpr const char* kPhaseLockParamId = "phase_lock";
 
 struct FactoryPreset {
     const char* name;
@@ -89,6 +90,8 @@ void Pico2VibeAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlo
     dsp->outputConditioner.reset(safeSampleRate, 0xC001C0DEu);
     bypassSmoothCoeff = static_cast<float>(1.0 - std::exp(-1.0 / (0.020 * safeSampleRate)));
     bypassEffectLevel = getBoolParam(kBypassParamId) ? 0.0f : 1.0f;
+    hostTempoBpm.store(0.0f, std::memory_order_relaxed);
+    transportPhase.store(-1.0f, std::memory_order_relaxed);
     syncParametersToDsp();
 }
 
@@ -106,7 +109,10 @@ void Pico2VibeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
     juce::ignoreUnused(midiMessages);
     juce::ScopedNoDenormals noDenormals;
 
-    syncParametersToDsp();
+    const HostTransportInfo transport = queryHostTransport();
+    hostTempoBpm.store(transport.bpm, std::memory_order_relaxed);
+    syncParametersToDsp(transport.bpm);
+    syncLfoPhaseToHost(transport);
 
     const int totalFrames = buffer.getNumSamples();
     const int channels = buffer.getNumChannels();
@@ -127,7 +133,7 @@ void Pico2VibeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
             dsp->inR[(size_t)i] = srcR[i];
         }
 
-        dsp->vibe.out(dsp->inL.data(), dsp->inR.data());
+        dsp->vibe.out(dsp->inL.data(), dsp->inR.data(), n);
 
         float* dstL = buffer.getWritePointer(0, pos);
         float* dstR = (channels > 1) ? buffer.getWritePointer(1, pos) : nullptr;
@@ -203,6 +209,8 @@ Pico2VibeAudioProcessor::ValueTreeState::ParameterLayout Pico2VibeAudioProcessor
         juce::ParameterID(kQualityParamId, 1), "Quality", qualityChoices(), 1));
     params.push_back(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID(kBypassParamId, 1), "Bypass", false));
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID(kPhaseLockParamId, 1), "Transport Phase Lock", true));
 
     for (uint32_t i = 0; i < vibe_param_count(); ++i) {
         const auto id = paramIdFromIndex(i);
@@ -252,7 +260,15 @@ float Pico2VibeAudioProcessor::getOutputMeterRight() const {
     return outputMeterRight.load(std::memory_order_relaxed);
 }
 
-void Pico2VibeAudioProcessor::syncParametersToDsp() {
+float Pico2VibeAudioProcessor::getHostTempoBpm() const {
+    return hostTempoBpm.load(std::memory_order_relaxed);
+}
+
+float Pico2VibeAudioProcessor::getTransportPhase() const {
+    return transportPhase.load(std::memory_order_relaxed);
+}
+
+void Pico2VibeAudioProcessor::syncParametersToDsp(float blockHostTempoBpm) {
     const int nextVoicing = juce::jlimit(0, (int)kVibeVoicingCount - 1, getChoiceParam(kVoicingParamId, 0));
     if (nextVoicing != currentVoicing) {
         currentVoicing = nextVoicing;
@@ -265,15 +281,55 @@ void Pico2VibeAudioProcessor::syncParametersToDsp() {
         dsp->vibe.set_quality_mode(static_cast<VibeQualityMode>(currentQuality));
     }
 
+    const bool useHostTempo = getBoolParam("tempo_sync") && blockHostTempoBpm > 0.0f;
     for (uint32_t i = 0; i < vibe_param_count(); ++i) {
         const auto id = paramIdFromIndex(i);
         const auto meta = vibe_param_metadata(id);
         if ((meta.flags & VibeParamFlagBoolean) != 0) {
             dsp->vibe.set_param(id, getBoolParam(meta.stable_name) ? 1.0f : 0.0f);
+        } else if (id == VibeParamId::TempoBpm && useHostTempo) {
+            dsp->vibe.set_param(id, blockHostTempoBpm);
         } else {
             dsp->vibe.set_param(id, getFloatParam(meta.stable_name));
         }
     }
+}
+
+Pico2VibeAudioProcessor::HostTransportInfo Pico2VibeAudioProcessor::queryHostTransport() const {
+    HostTransportInfo result;
+    const auto* hostPlayHead = getPlayHead();
+    if (hostPlayHead == nullptr) return result;
+
+    const auto position = hostPlayHead->getPosition();
+    if (!position.hasValue()) return result;
+
+    const auto bpm = position->getBpm();
+    if (bpm.hasValue() && std::isfinite(*bpm) && *bpm > 0.0) {
+        result.bpm = juce::jlimit(30.0f, 300.0f, static_cast<float>(*bpm));
+    }
+
+    const auto ppq = position->getPpqPosition();
+    if (ppq.hasValue() && std::isfinite(*ppq)) {
+        result.ppq = *ppq;
+        result.hasPpq = true;
+    }
+    result.isPlaying = position->getIsPlaying();
+    return result;
+}
+
+void Pico2VibeAudioProcessor::syncLfoPhaseToHost(const HostTransportInfo& transport) {
+    transportPhase.store(-1.0f, std::memory_order_relaxed);
+    if (!getBoolParam("tempo_sync") || !getBoolParam(kPhaseLockParamId)
+        || transport.bpm <= 0.0f || !transport.hasPpq || !transport.isPlaying) {
+        return;
+    }
+
+    const double division = juce::jlimit(0.25, 16.0, static_cast<double>(getFloatParam("tempo_division_beats")));
+    double phase = std::fmod(transport.ppq / division, 1.0);
+    if (phase < 0.0) phase += 1.0;
+    const float normalizedPhase = static_cast<float>(phase);
+    dsp->vibe.set_lfo_phase(normalizedPhase);
+    transportPhase.store(normalizedPhase, std::memory_order_relaxed);
 }
 
 float Pico2VibeAudioProcessor::getFloatParam(const char* id) const {

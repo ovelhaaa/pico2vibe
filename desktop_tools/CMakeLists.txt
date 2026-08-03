@@ -65,3 +65,9 @@ add_executable(phase_notch_test
 configure_desktop_tool_target(phase_notch_test)
 target_compile_definitions(phase_notch_test PRIVATE VIBE_DIAG_FREEZE_MODULATION=1 VIBE_DIAG_DISABLE_FEEDBACK=1)
 add_test(NAME phase_notch_test COMMAND phase_notch_test)
+
+add_executable(block_size_invariance_test
+    src/block_size_invariance_test.cpp
+)
+configure_desktop_tool_target(block_size_invariance_test)
+add_test(NAME block_size_invariance_test COMMAND block_size_invariance_test)

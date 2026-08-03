@@ -27,13 +27,17 @@ private:
     juce::ComboBox presetBox;
     juce::ComboBox voicingBox;
     juce::ComboBox qualityBox;
+    juce::TextButton tempoSyncButton;
+    juce::ToggleButton phaseLockButton;
     juce::TextButton bypassButton;
-    std::array<juce::Slider, 9> sliders;
-    std::array<juce::Label, 9> sliderLabels;
+    std::array<juce::Slider, 11> sliders;
+    std::array<juce::Label, 11> sliderLabels;
     std::unique_ptr<ComboAttachment> voicingAttachment;
     std::unique_ptr<ComboAttachment> qualityAttachment;
+    std::unique_ptr<ButtonAttachment> tempoSyncAttachment;
+    std::unique_ptr<ButtonAttachment> phaseLockAttachment;
     std::unique_ptr<ButtonAttachment> bypassAttachment;
-    std::array<std::unique_ptr<SliderAttachment>, 9> sliderAttachments;
+    std::array<std::unique_ptr<SliderAttachment>, 11> sliderAttachments;
     float meterLeft = 0.0f;
     float meterRight = 0.0f;
 

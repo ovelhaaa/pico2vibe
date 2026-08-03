@@ -51,11 +51,16 @@ jobs:
           cmake -S . -B $env:BUILD_DIR -G "Visual Studio 17 2022" -A x64
           -DPICO2VIBE_BUILD_FIRMWARE=OFF
           -DPICO2VIBE_BUILD_JUCE_PLUGIN=ON
+          -DBUILD_TESTING=ON
           -DPICO2VIBE_JUCE_DIR="$env:GITHUB_WORKSPACE/JUCE"
 
       - name: Build VST3
         shell: pwsh
         run: cmake --build $env:BUILD_DIR --config Release --parallel
+
+      - name: Run VST smoke tests
+        shell: pwsh
+        run: ctest --test-dir $env:BUILD_DIR -C Release --output-on-failure
 
       - name: Verify bundle
         shell: pwsh

@@ -267,19 +267,19 @@ void DesktopUnivibeProcessor::process_in_place(std::vector<float>& left, std::ve
         }
 
         if (impl_->user.engine_mode == UnivibeParams::EngineMode::legacy && impl_->legacy) {
-            impl_->legacy->out(impl_->in_l.data(), impl_->in_r.data());
+            impl_->legacy->out(impl_->in_l.data(), impl_->in_r.data(), static_cast<int>(take));
             debug_assert_vibe_state_finite(impl_->legacy);
             sanitize_vibe_state(impl_->legacy);
             for (size_t i = 0; i < take; ++i) {
                 impl_->write_output_sample(left, right, pos + i, impl_->diff_l[i], impl_->diff_r[i]);
             }
         } else {
-            impl_->improved->out(impl_->in_l.data(), impl_->in_r.data());
+            impl_->improved->out(impl_->in_l.data(), impl_->in_r.data(), static_cast<int>(take));
             debug_assert_vibe_state_finite(impl_->improved);
             sanitize_vibe_state(impl_->improved);
 
             if (impl_->user.compare_mode == UnivibeParams::CompareMode::difference && impl_->legacy) {
-                impl_->legacy->out(impl_->in_l.data(), impl_->in_r.data());
+                impl_->legacy->out(impl_->in_l.data(), impl_->in_r.data(), static_cast<int>(take));
                 debug_assert_vibe_state_finite(impl_->legacy);
                 sanitize_vibe_state(impl_->legacy);
                 for (size_t i = 0; i < take; ++i) {

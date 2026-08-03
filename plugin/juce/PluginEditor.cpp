@@ -4,8 +4,10 @@ namespace {
 constexpr int kMargin = 22;
 constexpr int kHeaderHeight = 78;
 constexpr int kSelectorHeight = 30;
-constexpr int kControlHeight = 98;
 constexpr int kMeterHeight = 12;
+constexpr size_t kRateSliderIndex = 1;
+constexpr size_t kTempoBpmSliderIndex = 9;
+constexpr size_t kTempoDivisionSliderIndex = 10;
 
 struct SliderSpec {
     const char* id;
@@ -22,7 +24,9 @@ constexpr SliderSpec kSliderSpecs[] = {
     { "stereo_width", "WIDTH", "" },
     { "tone_tilt", "TONE", "" },
     { "noise_amount", "NOISE", "" },
-    { "output_gain", "OUTPUT", "x" }
+    { "output_gain", "OUTPUT", "x" },
+    { "tempo_bpm", "BPM FALLBACK", " BPM" },
+    { "tempo_division_beats", "BEATS / CYCLE", " beats" }
 };
 
 juce::Colour backgroundColour() { return juce::Colour::fromRGB(12, 12, 10); }
@@ -35,7 +39,7 @@ juce::Colour accentColour() { return juce::Colour::fromRGB(86, 167, 132); }
 
 Pico2VibeAudioProcessorEditor::Pico2VibeAudioProcessorEditor(Pico2VibeAudioProcessor& owner)
     : AudioProcessorEditor(&owner), audioProcessor(owner) {
-    setSize(720, 430);
+    setSize(840, 510);
 
     titleLabel.setText("pico2vibe", juce::dontSendNotification);
     titleLabel.setJustificationType(juce::Justification::centredLeft);
@@ -64,6 +68,24 @@ Pico2VibeAudioProcessorEditor::Pico2VibeAudioProcessorEditor(Pico2VibeAudioProce
     qualityBox.addItemList(Pico2VibeAudioProcessor::qualityChoices(), 1);
     addAndMakeVisible(qualityBox);
     qualityAttachment = std::make_unique<ComboAttachment>(audioProcessor.parameters, "quality", qualityBox);
+
+    tempoSyncButton.setButtonText("SYNC");
+    tempoSyncButton.setClickingTogglesState(true);
+    tempoSyncButton.setTooltip("Use the DAW tempo when available");
+    tempoSyncButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(32, 31, 26));
+    tempoSyncButton.setColour(juce::TextButton::buttonOnColourId, accentColour().darker(0.35f));
+    tempoSyncButton.setColour(juce::TextButton::textColourOffId, mutedColour());
+    tempoSyncButton.setColour(juce::TextButton::textColourOnId, textColour());
+    addAndMakeVisible(tempoSyncButton);
+    tempoSyncAttachment = std::make_unique<ButtonAttachment>(audioProcessor.parameters, "tempo_sync", tempoSyncButton);
+
+    phaseLockButton.setButtonText("PHASE LOCK");
+    phaseLockButton.setTooltip("Align the LFO cycle to the DAW timeline");
+    phaseLockButton.setColour(juce::ToggleButton::textColourId, mutedColour());
+    phaseLockButton.setColour(juce::ToggleButton::tickColourId, accentColour());
+    phaseLockButton.setColour(juce::ToggleButton::tickDisabledColourId, edgeColour());
+    addAndMakeVisible(phaseLockButton);
+    phaseLockAttachment = std::make_unique<ButtonAttachment>(audioProcessor.parameters, "phase_lock", phaseLockButton);
 
     bypassButton.setButtonText("BYPASS");
     bypassButton.setClickingTogglesState(true);
@@ -105,24 +127,26 @@ void Pico2VibeAudioProcessorEditor::paint(juce::Graphics& g) {
 void Pico2VibeAudioProcessorEditor::resized() {
     auto area = getLocalBounds().reduced(kMargin);
     auto header = area.removeFromTop(kHeaderHeight);
-    auto titleArea = header.removeFromLeft(290);
+    auto titleArea = header.removeFromLeft(270);
     titleLabel.setBounds(titleArea.removeFromTop(34));
     subtitleLabel.setBounds(titleArea.removeFromTop(24));
 
-    auto selectorArea = header.removeFromRight(380);
+    auto selectorArea = header.removeFromRight(520);
     presetBox.setBounds(selectorArea.removeFromTop(kSelectorHeight));
     selectorArea.removeFromTop(8);
-    const int selectorWidth = selectorArea.getWidth() / 3;
+    const int selectorWidth = selectorArea.getWidth() / 4;
     voicingBox.setBounds(selectorArea.removeFromLeft(selectorWidth));
     selectorArea.removeFromLeft(8);
     qualityBox.setBounds(selectorArea.removeFromLeft(selectorWidth - 8));
+    selectorArea.removeFromLeft(8);
+    tempoSyncButton.setBounds(selectorArea.removeFromLeft(selectorWidth - 8).withHeight(kSelectorHeight));
     selectorArea.removeFromLeft(8);
     bypassButton.setBounds(selectorArea.withHeight(kSelectorHeight));
 
     area.removeFromTop(34);
     auto grid = area;
     grid.removeFromBottom(44);
-    const int columns = 3;
+    const int columns = 4;
     const int rows = 3;
     const int cellW = grid.getWidth() / columns;
     const int cellH = grid.getHeight() / rows;
@@ -131,8 +155,10 @@ void Pico2VibeAudioProcessorEditor::resized() {
         const int row = i / columns;
         auto cell = juce::Rectangle<int>(grid.getX() + col * cellW, grid.getY() + row * cellH, cellW, cellH).reduced(8, 4);
         sliderLabels[(size_t)i].setBounds(cell.removeFromTop(18));
-        sliders[(size_t)i].setBounds(cell.withHeight(kControlHeight));
+        sliders[(size_t)i].setBounds(cell);
     }
+    const auto phaseCell = juce::Rectangle<int>(grid.getX() + 3 * cellW, grid.getY() + 2 * cellH, cellW, cellH).reduced(18, 12);
+    phaseLockButton.setBounds(phaseCell.withSizeKeepingCentre(140, 28));
 }
 
 void Pico2VibeAudioProcessorEditor::configureSlider(juce::Slider& slider, const juce::String& suffix) {
@@ -172,5 +198,16 @@ void Pico2VibeAudioProcessorEditor::timerCallback() {
     const float decay = 0.82f;
     meterLeft = juce::jmax(audioProcessor.getOutputMeterLeft(), meterLeft * decay);
     meterRight = juce::jmax(audioProcessor.getOutputMeterRight(), meterRight * decay);
+
+    const auto* syncValue = audioProcessor.parameters.getRawParameterValue("tempo_sync");
+    const bool syncEnabled = syncValue != nullptr && syncValue->load() >= 0.5f;
+    const float hostBpm = audioProcessor.getHostTempoBpm();
+    sliders[kRateSliderIndex].setEnabled(!syncEnabled);
+    sliders[kTempoBpmSliderIndex].setEnabled(syncEnabled && hostBpm <= 0.0f);
+    sliders[kTempoDivisionSliderIndex].setEnabled(syncEnabled);
+    phaseLockButton.setEnabled(syncEnabled);
+    tempoSyncButton.setButtonText(syncEnabled && hostBpm > 0.0f
+                                      ? juce::String(hostBpm, 1) + " BPM"
+                                      : "SYNC");
     repaint();
 }

@@ -45,11 +45,21 @@ public:
 
     float getOutputMeterLeft() const;
     float getOutputMeterRight() const;
+    float getHostTempoBpm() const;
+    float getTransportPhase() const;
 
 private:
     struct DspState;
+    struct HostTransportInfo {
+        float bpm = 0.0f;
+        double ppq = 0.0;
+        bool hasPpq = false;
+        bool isPlaying = false;
+    };
 
-    void syncParametersToDsp();
+    void syncParametersToDsp(float hostTempoBpm = 0.0f);
+    HostTransportInfo queryHostTransport() const;
+    void syncLfoPhaseToHost(const HostTransportInfo& transport);
     float getFloatParam(const char* id) const;
     bool getBoolParam(const char* id) const;
     int getChoiceParam(const char* id, int fallback) const;
@@ -59,6 +69,8 @@ private:
     std::unique_ptr<DspState> dsp;
     std::atomic<float> outputMeterLeft { 0.0f };
     std::atomic<float> outputMeterRight { 0.0f };
+    std::atomic<float> hostTempoBpm { 0.0f };
+    std::atomic<float> transportPhase { -1.0f };
     float bypassEffectLevel = 1.0f;
     float bypassSmoothCoeff = 1.0f;
     int currentProgram = 0;

@@ -1019,6 +1019,11 @@ private:
     }
 
 public:
+    void setPhase(float normalized_phase) {
+        phase = normalized_phase - floorf(normalized_phase);
+        if (phase < 0.0f) phase += 1.0f;
+    }
+
     void reseed(uint32_t seed) {
         drift_rng = seed ? seed : 0xA341316Cu;
         drift_state = 0.0f;
@@ -1118,7 +1123,8 @@ public:
     Vibe(float *efxoutl_, float *efxoutr_);
     void prepare(float sample_rate_hz);
     float sample_rate() const { return sample_rate_hz; }
-    void out(float *smpsl, float *smpsr);
+    void out(float *smpsl, float *smpsr, int frames = PERIOD);
+    void set_lfo_phase(float normalized_phase) { lfo.setPhase(normalized_phase); }
     void init_vibes();
     void reseed(uint32_t seed);
     void set_user_params(const VibeUserParams &user);
@@ -1171,6 +1177,7 @@ private:
     float on0[8], on1[8], od0[8], od1[8];
     uint32_t rng_seed = 0x13579BDFu;
     uint32_t noise_rng = 0xC0FFEE23u;
+    uint32_t processed_sample_count = 0u;
     VibeUserParams smoothed_user;
     float output_trim_smoothed = 1.0f;
     float pre_hpf_x1_l = 0.0f, pre_hpf_y1_l = 0.0f;
@@ -1198,7 +1205,7 @@ private:
     void modulate_legacy_network(float res_l, float res_r);
     void reset_audio_state(bool reset_lfo);
     void update_time_constants();
-    void update_smoothed_user_params();
+    void update_smoothed_user_params(int frames);
     float bjt_shape_core(float data, float drive);
     float bjt_shape(float data, float drive);
     float bjt_shape_oversampled(float data, float drive, VibeOversampleState &state);
@@ -1595,10 +1602,10 @@ float Vibe::get_param_normalized(VibeParamId id) const {
     return (span > 0.0f) ? clampf((value - spec.min_value) / span, 0.0f, 1.0f) : 0.0f;
 }
 
-void Vibe::update_smoothed_user_params() {
+void Vibe::update_smoothed_user_params(int frames) {
     sanitize_user_params(&params.user);
 
-    const float block_time = fPERIOD / sample_rate_hz;
+    const float block_time = (float)frames / sample_rate_hz;
     const float smooth_hz = clampf(params.tuning.control_smoothing_hz, 1.0f, 80.0f);
     const float alpha = 1.0f - expf(-2.0f * kPi * smooth_hz * block_time);
 
@@ -1826,6 +1833,7 @@ void Vibe::reset_audio_state(bool reset_lfo) {
     noise_color_l = 0.0f;
     noise_color_r = 0.0f;
     noise_rng = rng_seed ^ 0x9E3779B9u;
+    processed_sample_count = 0u;
     pre_hpf_x1_l = 0.0f;
     pre_hpf_y1_l = 0.0f;
     pre_hpf_x1_r = 0.0f;
@@ -1943,9 +1951,12 @@ float Vibe::allpass_phase_network_process(float x, int first_stage, float coeff_
     return y;
 }
 
-void Vibe::out(float *smpsl, float *smpsr) {
+void Vibe::out(float *smpsl, float *smpsr, int frames) {
+    frames = (frames < 0) ? 0 : ((frames > PERIOD) ? PERIOD : frames);
+    if (frames == 0) return;
+
     const VibeUserParams prev = smoothed_user;
-    update_smoothed_user_params();
+    update_smoothed_user_params(frames);
     update_time_constants();
     // Invariant: stage integrator state is always bounded by tuning to avoid runaway poles.
     const float stage_limit = clampf(params.tuning.stage_state_limit, 2.0f, 12.0f);
@@ -1957,17 +1968,17 @@ void Vibe::out(float *smpsl, float *smpsr) {
     const float input_env_attack = 1.0f - expf(-2.0f * kPi * 180.0f * inv_sample_rate);
     const float input_env_release = 1.0f - expf(-2.0f * kPi * 16.0f * inv_sample_rate);
 
-    depth_ramp.begin(prev.depth, smoothed_user.depth, PERIOD);
-    fb_ramp.begin(prev.feedback, smoothed_user.feedback, PERIOD);
-    mix_ramp.begin(prev.mix, smoothed_user.mix, PERIOD);
-    drive_ramp.begin(prev.input_drive, smoothed_user.input_drive, PERIOD);
-    gain_ramp.begin(prev.output_gain, smoothed_user.output_gain, PERIOD);
-    sweep_min_ramp.begin(prev.sweep_min, smoothed_user.sweep_min, PERIOD);
-    sweep_max_ramp.begin(prev.sweep_max, smoothed_user.sweep_max, PERIOD);
-    pre_hpf_ramp.begin(prev.pre_hpf_hz, smoothed_user.pre_hpf_hz, PERIOD);
-    tone_tilt_ramp.begin(prev.tone_tilt, smoothed_user.tone_tilt, PERIOD);
-    sat_asym_ramp.begin(prev.sat_asymmetry, smoothed_user.sat_asymmetry, PERIOD);
-    sat_trim_ramp.begin(prev.sat_out_trim, smoothed_user.sat_out_trim, PERIOD);
+    depth_ramp.begin(prev.depth, smoothed_user.depth, frames);
+    fb_ramp.begin(prev.feedback, smoothed_user.feedback, frames);
+    mix_ramp.begin(prev.mix, smoothed_user.mix, frames);
+    drive_ramp.begin(prev.input_drive, smoothed_user.input_drive, frames);
+    gain_ramp.begin(prev.output_gain, smoothed_user.output_gain, frames);
+    sweep_min_ramp.begin(prev.sweep_min, smoothed_user.sweep_min, frames);
+    sweep_max_ramp.begin(prev.sweep_max, smoothed_user.sweep_max, frames);
+    pre_hpf_ramp.begin(prev.pre_hpf_hz, smoothed_user.pre_hpf_hz, frames);
+    tone_tilt_ramp.begin(prev.tone_tilt, smoothed_user.tone_tilt, frames);
+    sat_asym_ramp.begin(prev.sat_asymmetry, smoothed_user.sat_asymmetry, frames);
+    sat_trim_ramp.begin(prev.sat_out_trim, smoothed_user.sat_out_trim, frames);
 
     const float drift_alpha = 1.0f - expf(-2.0f * kPi * clampf(smoothed_user.drift_rate_hz, 0.005f, 0.5f) * inv_sample_rate);
     const float profile_smooth_scale = (params.profile == VibeProfile::Modern) ? 1.12f : 0.92f;
@@ -2005,7 +2016,8 @@ void Vibe::out(float *smpsl, float *smpsr) {
     (void)coeff_update_period;
 #endif
 
-    for (int i = 0; i < PERIOD; i++) {
+    for (int i = 0; i < frames; i++) {
+        const uint32_t sample_index = processed_sample_count++;
         smoothed_user.sat_asymmetry = sat_asym_ramp.tick();
         smoothed_user.sat_out_trim = sat_trim_ramp.tick();
 
@@ -2062,7 +2074,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
 #if VIBE_COEFF_UPDATE_PER_SAMPLE
         modulate(mod_res_l, mod_res_r);
 #else
-        if (coeff_update_period == 1 || (i % coeff_update_period) == 0) {
+        if (coeff_update_period == 1 || (sample_index % (uint32_t)coeff_update_period) == 0u) {
             modulate(mod_res_l, mod_res_r);
         }
 #endif
@@ -2216,7 +2228,7 @@ void Vibe::out(float *smpsl, float *smpsr) {
         const float inv_env_l = wet_ref / fmaxf(wet_env_l, wet_env_floor);
         const float inv_env_r = wet_ref / fmaxf(wet_env_r, wet_env_floor);
         const float depth_comp_amt = clampf(depth * (0.55f + 0.45f * mix), 0.0f, 1.0f);
-        if ((i & 0x3) == 0) {
+        if ((sample_index & 0x3u) == 0u) {
             wet_comp_l_raw_state = clampf(powf(inv_env_l, 0.20f), wet_comp_min, wet_comp_max);
             wet_comp_r_raw_state = clampf(powf(inv_env_r, 0.20f), wet_comp_min, wet_comp_max);
         }
