@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="510" viewBox="0 0 840 510" role="img" aria-labelledby="title desc">
+  <title id="title">pico2vibe current JUCE interface</title>
+  <desc id="desc">Current 840 by 510 pixel testbench interface with selectors, eleven rotary controls, tempo sync, phase lock, bypass, and stereo meters.</desc>
+  <style>
+    text { font-family: "Segoe UI", Arial, sans-serif; letter-spacing: 0; }
+    .title { fill: #56a784; font-size: 25px; font-weight: 700; }
+    .subtitle { fill: #8e8669; font-size: 13px; }
+    .label { fill: #8e8669; font-size: 11px; font-weight: 700; text-anchor: middle; }
+    .value { fill: #dbd5be; font-size: 11px; text-anchor: middle; dominant-baseline: middle; }
+    .select-text { fill: #dbd5be; font-size: 12px; dominant-baseline: middle; }
+    .button-text { fill: #8e8669; font-size: 11px; font-weight: 700; text-anchor: middle; dominant-baseline: middle; }
+    .knob-track { fill: #161612; stroke: #363226; stroke-width: 4; }
+    .knob-arc { fill: none; stroke: #56a784; stroke-width: 4; stroke-linecap: round; transform: rotate(135deg); transform-box: fill-box; transform-origin: center; }
+    .indicator { stroke: #56a784; stroke-width: 3; stroke-linecap: round; }
+    .textbox { fill: #1c1b17; }
+    .disabled { opacity: 0.38; }
+  </style>
+
+  <defs>
+    <g id="combo-arrow">
+      <path d="M0 0 L5 5 L10 0" fill="none" stroke="#8e8669" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </defs>
+
+  <rect width="840" height="510" fill="#0c0c0a"/>
+  <rect x="10.5" y="10.5" width="819" height="489" rx="8" fill="#161612" stroke="#3b3627"/>
+
+  <text class="title" x="22" y="48">pico2vibe</text>
+  <text class="subtitle" x="22" y="72">optical phase chorus / vibrato</text>
+
+  <g aria-label="Preset selector">
+    <rect x="298" y="22" width="520" height="30" rx="2" fill="#201f1a" stroke="#3b3627"/>
+    <text class="select-text" x="310" y="37">Classic Uni-Vibe</text>
+    <use href="#combo-arrow" x="794" y="34"/>
+  </g>
+  <g aria-label="Voicing selector">
+    <rect x="298" y="60" width="130" height="40" rx="2" fill="#201f1a" stroke="#3b3627"/>
+    <text class="select-text" x="308" y="80">Classic Chorus</text>
+    <use href="#combo-arrow" x="406" y="77"/>
+  </g>
+  <g aria-label="Quality selector">
+    <rect x="436" y="60" width="122" height="40" rx="2" fill="#201f1a" stroke="#3b3627"/>
+    <text class="select-text" x="446" y="80">Standard</text>
+    <use href="#combo-arrow" x="536" y="77"/>
+  </g>
+  <g aria-label="Tempo sync off">
+    <rect x="566" y="60" width="122" height="30" rx="2" fill="#201f1a" stroke="#3b3627"/>
+    <text class="button-text" x="627" y="75">SYNC</text>
+  </g>
+  <g aria-label="Bypass off">
+    <rect x="696" y="60" width="122" height="30" rx="2" fill="#201f1a" stroke="#3b3627"/>
+    <text class="button-text" x="757" y="75">BYPASS</text>
+  </g>
+
+  <rect x="22" y="104" width="796" height="1" fill="#26241d"/>
+
+  <!-- Row 1 -->
+  <g aria-label="Depth 0.78">
+    <text class="label" x="121.5" y="150">DEPTH</text>
+    <circle class="knob-track" cx="121.5" cy="184" r="27"/>
+    <circle class="knob-arc" cx="121.5" cy="184" r="25" stroke-dasharray="91.9 65.2"/>
+    <line class="indicator" x1="121.5" y1="184" x2="121.5" y2="164" transform="rotate(75.6 121.5 184)"/>
+    <rect class="textbox" x="82.5" y="214" width="78" height="18" rx="2"/>
+    <text class="value" x="121.5" y="223">0.78</text>
+  </g>
+  <g aria-label="Rate 0.85 hertz">
+    <text class="label" x="320.5" y="150">RATE</text>
+    <circle class="knob-track" cx="320.5" cy="184" r="27"/>
+    <circle class="knob-arc" cx="320.5" cy="184" r="25" stroke-dasharray="55.6 101.5"/>
+    <line class="indicator" x1="320.5" y1="184" x2="320.5" y2="164" transform="rotate(-7.6 320.5 184)"/>
+    <rect class="textbox" x="281.5" y="214" width="78" height="18" rx="2"/>
+    <text class="value" x="320.5" y="223">0.85 Hz</text>
+  </g>
+  <g aria-label="Mix 0.48">
+    <text class="label" x="519.5" y="150">MIX</text>
+    <circle class="knob-track" cx="519.5" cy="184" r="27"/>
+    <circle class="knob-arc" cx="519.5" cy="184" r="25" stroke-dasharray="56.5 100.6"/>
+    <line class="indicator" x1="519.5" y1="184" x2="519.5" y2="164" transform="rotate(-5.4 519.5 184)"/>
+    <rect class="textbox" x="480.5" y="214" width="78" height="18" rx="2"/>
+    <text class="value" x="519.5" y="223">0.48</text>
+  </g>
+  <g aria-label="Feedback 0.34">
+    <text class="label" x="718.5" y="150">FEEDBACK</text>
+    <circle class="knob-track" cx="718.5" cy="184" r="27"/>
+    <circle class="knob-arc" cx="718.5" cy="184" r="25" stroke-dasharray="61.6 95.5"/>
+    <line class="indicator" x1="718.5" y1="184" x2="718.5" y2="164" transform="rotate(6.2 718.5 184)"/>
+    <rect class="textbox" x="679.5" y="214" width="78" height="18" rx="2"/>
+    <text class="value" x="718.5" y="223">0.34</text>
+  </g>
+
+  <!-- Row 2 -->
+  <g aria-label="Drive 1.65 times">
+    <text class="label" x="121.5" y="253">DRIVE</text>
+    <circle class="knob-track" cx="121.5" cy="287" r="27"/>
+    <circle class="knob-arc" cx="121.5" cy="287" r="25" stroke-dasharray="24.6 132.5"/>
+    <line class="indicator" x1="121.5" y1="287" x2="121.5" y2="267" transform="rotate(-78.5 121.5 287)"/>
+    <rect class="textbox" x="82.5" y="317" width="78" height="18" rx="2"/>
+    <text class="value" x="121.5" y="326">1.65x</text>
+  </g>
+  <g aria-label="Width 0.62">
+    <text class="label" x="320.5" y="253">WIDTH</text>
+    <circle class="knob-track" cx="320.5" cy="287" r="27"/>
+    <circle class="knob-arc" cx="320.5" cy="287" r="25" stroke-dasharray="54.1 103"/>
+    <line class="indicator" x1="320.5" y1="287" x2="320.5" y2="267" transform="rotate(-11.1 320.5 287)"/>
+    <rect class="textbox" x="281.5" y="317" width="78" height="18" rx="2"/>
+    <text class="value" x="320.5" y="326">0.62</text>
+  </g>
+  <g aria-label="Tone minus 0.10">
+    <text class="label" x="519.5" y="253">TONE</text>
+    <circle class="knob-track" cx="519.5" cy="287" r="27"/>
+    <circle class="knob-arc" cx="519.5" cy="287" r="25" stroke-dasharray="53 104.1"/>
+    <line class="indicator" x1="519.5" y1="287" x2="519.5" y2="267" transform="rotate(-13.5 519.5 287)"/>
+    <rect class="textbox" x="480.5" y="317" width="78" height="18" rx="2"/>
+    <text class="value" x="519.5" y="326">-0.10</text>
+  </g>
+  <g aria-label="Noise zero">
+    <text class="label" x="718.5" y="253">NOISE</text>
+    <circle class="knob-track" cx="718.5" cy="287" r="27"/>
+    <line class="indicator" x1="718.5" y1="287" x2="718.5" y2="267" transform="rotate(-135 718.5 287)"/>
+    <rect class="textbox" x="679.5" y="317" width="78" height="18" rx="2"/>
+    <text class="value" x="718.5" y="326">0.00</text>
+  </g>
+
+  <!-- Row 3 -->
+  <g aria-label="Output one times">
+    <text class="label" x="121.5" y="356">OUTPUT</text>
+    <circle class="knob-track" cx="121.5" cy="390" r="27"/>
+    <circle class="knob-arc" cx="121.5" cy="390" r="25" stroke-dasharray="50.5 106.6"/>
+    <line class="indicator" x1="121.5" y1="390" x2="121.5" y2="370" transform="rotate(-19.3 121.5 390)"/>
+    <rect class="textbox" x="82.5" y="420" width="78" height="18" rx="2"/>
+    <text class="value" x="121.5" y="429">1.00x</text>
+  </g>
+  <g class="disabled" aria-label="BPM fallback disabled at 120 BPM">
+    <text class="label" x="320.5" y="356">BPM FALLBACK</text>
+    <circle class="knob-track" cx="320.5" cy="390" r="27"/>
+    <circle class="knob-arc" cx="320.5" cy="390" r="25" stroke-dasharray="39.3 117.8"/>
+    <line class="indicator" x1="320.5" y1="390" x2="320.5" y2="370" transform="rotate(-45 320.5 390)"/>
+    <rect class="textbox" x="281.5" y="420" width="78" height="18" rx="2"/>
+    <text class="value" x="320.5" y="429">120 BPM</text>
+  </g>
+  <g class="disabled" aria-label="Beats per cycle disabled at one">
+    <text class="label" x="519.5" y="356">BEATS / CYCLE</text>
+    <circle class="knob-track" cx="519.5" cy="390" r="27"/>
+    <circle class="knob-arc" cx="519.5" cy="390" r="25" stroke-dasharray="5.6 151.5"/>
+    <line class="indicator" x1="519.5" y1="390" x2="519.5" y2="370" transform="rotate(-122.1 519.5 390)"/>
+    <rect class="textbox" x="480.5" y="420" width="78" height="18" rx="2"/>
+    <text class="value" x="519.5" y="429">1.00 beats</text>
+  </g>
+  <g class="disabled" aria-label="Phase lock enabled but unavailable while sync is off">
+    <rect x="648.5" y="375.5" width="15" height="15" rx="2" fill="#1c1b17" stroke="#3b3627"/>
+    <path d="M652 383 L656 387 L662 379" fill="none" stroke="#3b3627" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="672" y="387" fill="#8e8669" font-size="11" font-weight="700">PHASE LOCK</text>
+  </g>
+
+  <!-- Output meters -->
+  <text x="22" y="469" fill="#8e8669" font-size="11">L</text>
+  <rect x="40" y="460" width="778" height="8" fill="#1c1b17" stroke="#3b3627"/>
+  <rect x="41" y="461" width="481" height="6" fill="#56a784"/>
+  <text x="22" y="486" fill="#8e8669" font-size="11">R</text>
+  <rect x="40" y="477" width="778" height="8" fill="#1c1b17" stroke="#3b3627"/>
+  <rect x="41" y="478" width="373" height="6" fill="#56a784"/>
+</svg>
