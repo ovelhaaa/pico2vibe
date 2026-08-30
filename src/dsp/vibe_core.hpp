@@ -1758,8 +1758,10 @@ void Vibe::init_vibes() {
         0.015e-6f, 0.22e-6f, 470e-12f, 0.0047e-6f
     };
 
-    mod_res_l = clampf(mod_res_l, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
-    mod_res_r = clampf(mod_res_r, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
+    const float mod_ldr_max_ohms = fmaxf(params.tuning.ldr_max_ohms, 0.0f);
+    const float ldr_min_ohms = clampf(params.tuning.ldr_min_ohms, 0.0f, mod_ldr_max_ohms);
+    mod_res_l = clampf(mod_res_l, ldr_min_ohms, mod_ldr_max_ohms);
+    mod_res_r = clampf(mod_res_r, ldr_min_ohms, mod_ldr_max_ohms);
 
     uint32_t component_rng = rng_seed ^ 0x51F15EEDu;
     channel_lamp_slew_l = clampf(1.0f + params.tuning.stage_time_spread * noise_bipolar(component_rng), 0.85f, 1.15f);
@@ -1785,7 +1787,7 @@ void Vibe::init_vibes() {
         if (C1[i] < 1.0e-9f) {
             const float max_corner_hz = clampf(VIBE_470PF_MAX_CORNER_HZ, 6000.0f, 22000.0f);
             const float min_total_r = 1.0f / (2.0f * kPi * max_corner_hz * C1[i]);
-            min_stage_res[i] = fmaxf(0.0f, min_total_r - 4700.0f);
+            min_stage_res[i] = fmaxf(ldr_min_ohms, min_total_r - 4700.0f);
         } else {
             min_stage_res[i] = 0.0f;
         }
