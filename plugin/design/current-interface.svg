@@ -63,63 +63,63 @@
   <rect x="22" y="104" width="796" height="1" fill="#26241d"/>
 
   <!-- Row 1 -->
-  <g aria-label="Depth 0.78">
+  <g aria-label="Depth 0.74">
     <text class="label" x="121.5" y="150">DEPTH</text>
     <circle class="knob-track" cx="121.5" cy="184" r="27"/>
-    <circle class="knob-arc" cx="121.5" cy="184" r="25" stroke-dasharray="91.9 65.2"/>
-    <line class="indicator" x1="121.5" y1="184" x2="121.5" y2="164" transform="rotate(75.6 121.5 184)"/>
+    <circle class="knob-arc" cx="121.5" cy="184" r="25" stroke-dasharray="87.2 69.9"/>
+    <line class="indicator" x1="121.5" y1="184" x2="121.5" y2="164" transform="rotate(64.8 121.5 184)"/>
     <rect class="textbox" x="82.5" y="214" width="78" height="18" rx="2"/>
-    <text class="value" x="121.5" y="223">0.78</text>
+    <text class="value" x="121.5" y="223">0.74</text>
   </g>
-  <g aria-label="Rate 0.85 hertz">
+  <g aria-label="Rate 0.78 hertz">
     <text class="label" x="320.5" y="150">RATE</text>
     <circle class="knob-track" cx="320.5" cy="184" r="27"/>
     <circle class="knob-arc" cx="320.5" cy="184" r="25" stroke-dasharray="55.6 101.5"/>
     <line class="indicator" x1="320.5" y1="184" x2="320.5" y2="164" transform="rotate(-7.6 320.5 184)"/>
     <rect class="textbox" x="281.5" y="214" width="78" height="18" rx="2"/>
-    <text class="value" x="320.5" y="223">0.85 Hz</text>
+    <text class="value" x="320.5" y="223">0.78 Hz</text>
   </g>
-  <g aria-label="Mix 0.48">
+  <g aria-label="Mix 0.50">
     <text class="label" x="519.5" y="150">MIX</text>
     <circle class="knob-track" cx="519.5" cy="184" r="27"/>
-    <circle class="knob-arc" cx="519.5" cy="184" r="25" stroke-dasharray="56.5 100.6"/>
-    <line class="indicator" x1="519.5" y1="184" x2="519.5" y2="164" transform="rotate(-5.4 519.5 184)"/>
+    <circle class="knob-arc" cx="519.5" cy="184" r="25" stroke-dasharray="58.9 98.2"/>
+    <line class="indicator" x1="519.5" y1="184" x2="519.5" y2="164" transform="rotate(0 519.5 184)"/>
     <rect class="textbox" x="480.5" y="214" width="78" height="18" rx="2"/>
-    <text class="value" x="519.5" y="223">0.48</text>
+    <text class="value" x="519.5" y="223">0.50</text>
   </g>
-  <g aria-label="Feedback 0.34">
+  <g aria-label="Feedback 0.22">
     <text class="label" x="718.5" y="150">FEEDBACK</text>
     <circle class="knob-track" cx="718.5" cy="184" r="27"/>
-    <circle class="knob-arc" cx="718.5" cy="184" r="25" stroke-dasharray="61.6 95.5"/>
-    <line class="indicator" x1="718.5" y1="184" x2="718.5" y2="164" transform="rotate(6.2 718.5 184)"/>
+    <circle class="knob-arc" cx="718.5" cy="184" r="25" stroke-dasharray="39.9 117.2"/>
+    <line class="indicator" x1="718.5" y1="184" x2="718.5" y2="164" transform="rotate(-43.6 718.5 184)"/>
     <rect class="textbox" x="679.5" y="214" width="78" height="18" rx="2"/>
-    <text class="value" x="718.5" y="223">0.34</text>
+    <text class="value" x="718.5" y="223">0.22</text>
   </g>
 
   <!-- Row 2 -->
-  <g aria-label="Drive 1.65 times">
+  <g aria-label="Drive 1.55 times">
     <text class="label" x="121.5" y="253">DRIVE</text>
     <circle class="knob-track" cx="121.5" cy="287" r="27"/>
-    <circle class="knob-arc" cx="121.5" cy="287" r="25" stroke-dasharray="24.6 132.5"/>
-    <line class="indicator" x1="121.5" y1="287" x2="121.5" y2="267" transform="rotate(-78.5 121.5 287)"/>
+    <circle class="knob-arc" cx="121.5" cy="287" r="25" stroke-dasharray="22.5 134.6"/>
+    <line class="indicator" x1="121.5" y1="287" x2="121.5" y2="267" transform="rotate(-83.5 121.5 287)"/>
     <rect class="textbox" x="82.5" y="317" width="78" height="18" rx="2"/>
-    <text class="value" x="121.5" y="326">1.65x</text>
+    <text class="value" x="121.5" y="326">1.55x</text>
   </g>
-  <g aria-label="Width 0.62">
+  <g aria-label="Width 0.46">
     <text class="label" x="320.5" y="253">WIDTH</text>
     <circle class="knob-track" cx="320.5" cy="287" r="27"/>
-    <circle class="knob-arc" cx="320.5" cy="287" r="25" stroke-dasharray="54.1 103"/>
-    <line class="indicator" x1="320.5" y1="287" x2="320.5" y2="267" transform="rotate(-11.1 320.5 287)"/>
+    <circle class="knob-arc" cx="320.5" cy="287" r="25" stroke-dasharray="40.2 116.9"/>
+    <line class="indicator" x1="320.5" y1="287" x2="320.5" y2="267" transform="rotate(-43 320.5 287)"/>
     <rect class="textbox" x="281.5" y="317" width="78" height="18" rx="2"/>
-    <text class="value" x="320.5" y="326">0.62</text>
+    <text class="value" x="320.5" y="326">0.46</text>
   </g>
-  <g aria-label="Tone minus 0.10">
+  <g aria-label="Tone minus 0.08">
     <text class="label" x="519.5" y="253">TONE</text>
     <circle class="knob-track" cx="519.5" cy="287" r="27"/>
     <circle class="knob-arc" cx="519.5" cy="287" r="25" stroke-dasharray="53 104.1"/>
     <line class="indicator" x1="519.5" y1="287" x2="519.5" y2="267" transform="rotate(-13.5 519.5 287)"/>
     <rect class="textbox" x="480.5" y="317" width="78" height="18" rx="2"/>
-    <text class="value" x="519.5" y="326">-0.10</text>
+    <text class="value" x="519.5" y="326">-0.08</text>
   </g>
   <g aria-label="Noise zero">
     <text class="label" x="718.5" y="253">NOISE</text>
@@ -130,13 +130,13 @@
   </g>
 
   <!-- Row 3 -->
-  <g aria-label="Output one times">
+  <g aria-label="Output 1.03 times">
     <text class="label" x="121.5" y="356">OUTPUT</text>
     <circle class="knob-track" cx="121.5" cy="390" r="27"/>
     <circle class="knob-arc" cx="121.5" cy="390" r="25" stroke-dasharray="50.5 106.6"/>
     <line class="indicator" x1="121.5" y1="390" x2="121.5" y2="370" transform="rotate(-19.3 121.5 390)"/>
     <rect class="textbox" x="82.5" y="420" width="78" height="18" rx="2"/>
-    <text class="value" x="121.5" y="429">1.00x</text>
+    <text class="value" x="121.5" y="429">1.03x</text>
   </g>
   <g class="disabled" aria-label="BPM fallback disabled at 120 BPM">
     <text class="label" x="320.5" y="356">BPM FALLBACK</text>

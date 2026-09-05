@@ -44,3 +44,11 @@ preset selector follows program changes made by the DAW.
 The A/B buttons keep two independent sound snapshots for fast comparison. Both
 slots and the active selection are stored in the project state, while bypass is
 treated as a global control and remains unchanged when switching sides.
+
+The factory bank keeps the original six program indices and adds six production
+voices. Classic Uni-Vibe, Shin-ei Dark and Deja Lead cover the vintage/lead range;
+Voodoo Wide and Modern Hi-Fi provide controlled stereo options; Classic Vibrato,
+Hendrix Deep and Psychedelic Slow emphasize pitch and deep optical movement;
+Gentle Clean, Rotary Fast, Bass Anchor and Lamp Drift cover utility and texture.
+Each program defines the complete sound state, including sweep range, lamp lag,
+drift, saturation trim, pre-HPF and output gain.

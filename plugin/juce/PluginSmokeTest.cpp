@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -173,9 +174,9 @@ void runMonoSmokeTest() {
 
 void runStateMigrationTest() {
     Pico2VibeAudioProcessor source;
-    requireNear(getParameterValue(source, "depth"), 0.78f, 1.0e-5f,
+    requireNear(getParameterValue(source, "depth"), 0.74f, 1.0e-5f,
                 "initial depth does not match the default factory preset");
-    requireNear(getParameterDefault(source, "depth"), 0.78f, 1.0e-5f,
+    requireNear(getParameterDefault(source, "depth"), 0.74f, 1.0e-5f,
                 "host depth default does not match the default factory preset");
     setParameter(source, "depth", 0.42f);
 
@@ -222,7 +223,7 @@ void runProgramTrackingTest() {
 
     processor.setCurrentProgram(1);
     require(processor.getCurrentProgram() == 1, "factory program selection was not retained");
-    requireNear(getParameterValue(processor, "depth"), 0.84f, 1.0e-5f,
+    requireNear(getParameterValue(processor, "depth"), 0.80f, 1.0e-5f,
                 "factory program did not restore its depth");
 
     setParameter(processor, "output_gain", 1.47f);
@@ -270,7 +271,7 @@ void runComparisonStateTest() {
 
     processor.selectComparisonSlot(1);
     require(processor.getComparisonSlot() == 1, "comparison did not switch to slot B");
-    requireNear(getParameterValue(processor, "depth"), 0.78f, 1.0e-5f,
+    requireNear(getParameterValue(processor, "depth"), 0.74f, 1.0e-5f,
                 "slot B did not retain its independent initial sound");
     requireNear(getParameterValue(processor, "bypass"), 1.0f, 1.0e-5f,
                 "comparison switch did not preserve global bypass");
@@ -306,6 +307,81 @@ void runComparisonStateTest() {
     requireNear(getParameterValue(recovered, "depth"), 0.66f, 1.0e-5f,
                 "malformed comparison slot did not fall back to the active sound");
 }
+
+void runFactoryPresetAudioTest() {
+    const auto names = Pico2VibeAudioProcessor::factoryPresetNames();
+    require(names.size() == 12, "unexpected factory preset count");
+
+    juce::StringArray uniqueNames;
+    for (const auto& name : names) {
+        require(name.isNotEmpty() && !uniqueNames.contains(name), "factory preset names are not unique");
+        uniqueNames.add(name);
+    }
+
+    constexpr int blockSize = 127;
+    constexpr int totalSamples = 96000;
+    constexpr int warmupSamples = 12000;
+    float quietestRms = std::numeric_limits<float>::max();
+    float loudestRms = 0.0f;
+    for (int preset = 0; preset < names.size(); ++preset) {
+        Pico2VibeAudioProcessor processor;
+        processor.prepareToPlay(kSampleRate, blockSize);
+        processor.setCurrentProgram(preset);
+
+        double sumSquares = 0.0;
+        double monoSumSquares = 0.0;
+        float peak = 0.0f;
+        int measuredSamples = 0;
+        int timelineSample = 0;
+        while (timelineSample < totalSamples) {
+            const int frames = juce::jmin(blockSize, totalSamples - timelineSample);
+            juce::AudioBuffer<float> buffer(2, frames);
+            for (int sample = 0; sample < frames; ++sample) {
+                const double t = static_cast<double>(timelineSample + sample) / kSampleRate;
+                const float input = 0.075f * (
+                    std::sin(2.0 * juce::MathConstants<double>::pi * 110.0 * t)
+                    + 0.58 * std::sin(2.0 * juce::MathConstants<double>::pi * 220.0 * t)
+                    + 0.36 * std::sin(2.0 * juce::MathConstants<double>::pi * 329.63 * t));
+                buffer.setSample(0, sample, input);
+                buffer.setSample(1, sample, input);
+            }
+
+            juce::MidiBuffer midi;
+            processor.processBlock(buffer, midi);
+            for (int sample = 0; sample < frames; ++sample) {
+                const float left = buffer.getSample(0, sample);
+                const float right = buffer.getSample(1, sample);
+                require(std::isfinite(left) && std::isfinite(right),
+                        "non-finite output in factory preset " + names[preset].toStdString());
+                if (timelineSample + sample < warmupSamples) continue;
+
+                const float mono = 0.5f * (left + right);
+                sumSquares += 0.5 * (static_cast<double>(left) * left
+                                    + static_cast<double>(right) * right);
+                monoSumSquares += static_cast<double>(mono) * mono;
+                peak = juce::jmax(peak, std::abs(left), std::abs(right));
+                ++measuredSamples;
+            }
+            timelineSample += frames;
+        }
+
+        const float rms = static_cast<float>(std::sqrt(sumSquares / measuredSamples));
+        const float monoRms = static_cast<float>(std::sqrt(monoSumSquares / measuredSamples));
+        const float monoRetention = monoRms / juce::jmax(1.0e-9f, rms);
+        quietestRms = juce::jmin(quietestRms, rms);
+        loudestRms = juce::jmax(loudestRms, rms);
+        std::cout << "preset " << preset << " " << names[preset]
+                  << ": rms=" << rms << ", peak=" << peak
+                  << ", mono=" << monoRetention << std::endl;
+        require(rms > 0.015f && rms < 0.40f,
+                "unsafe RMS for factory preset " + names[preset].toStdString());
+        require(peak < 1.25f, "unsafe peak for factory preset " + names[preset].toStdString());
+        require(monoRetention > 0.45f,
+                "poor mono compatibility for factory preset " + names[preset].toStdString());
+    }
+    require(loudestRms / quietestRms < 1.55f,
+            "factory preset loudness spread is too large");
+}
 }  // namespace
 
 int main() {
@@ -317,6 +393,7 @@ int main() {
         runProgramTrackingTest();
         runRepeatedStateRestorationTest();
         runComparisonStateTest();
+        runFactoryPresetAudioTest();
         std::cout << "juce_plugin_smoke_test passed" << std::endl;
         return 0;
     } catch (const std::exception& e) {
