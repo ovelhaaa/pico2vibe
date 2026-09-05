@@ -26,6 +26,7 @@ concurrency:
 env:
   BUILD_DIR: build/vst
   JUCE_VERSION: 7.0.12
+  PLUGINVAL_VERSION: 1.0.4
   VST3_DIR: build/vst/plugin/juce/Pico2VibePlugin_artefacts/Release/VST3
 
 jobs:
@@ -73,6 +74,55 @@ jobs:
           }
 
           Get-ChildItem -LiteralPath $bundle -Recurse | Select-Object FullName, Length
+
+      - name: Download pluginval
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP "pluginval_Windows.zip"
+          $toolsDir = Join-Path $env:RUNNER_TEMP "pluginval"
+          $url = "https://github.com/Tracktion/pluginval/releases/download/v$env:PLUGINVAL_VERSION/pluginval_Windows.zip"
+          $expectedSha256 = "c08e61ce3b96db41636f8ec7e76f4c7e2c13ebdac7fa1b5a1f52b4f32ec715ab"
+
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          $actualSha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualSha256 -ne $expectedSha256) {
+            throw "pluginval checksum mismatch: $actualSha256"
+          }
+
+          Expand-Archive -LiteralPath $archive -DestinationPath $toolsDir
+          $executable = Get-ChildItem -LiteralPath $toolsDir -Filter pluginval.exe -Recurse |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $executable) {
+            throw "pluginval.exe was not found in the downloaded archive"
+          }
+          "PLUGINVAL_EXE=$executable" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Validate VST3 with pluginval
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $env:GITHUB_WORKSPACE "$env:VST3_DIR/pico2vibe.vst3"
+          $logDir = Join-Path $env:GITHUB_WORKSPACE "$env:BUILD_DIR/pluginval"
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+          & $env:PLUGINVAL_EXE --validate-in-process --validate $bundle `
+            --strictness-level 8 --timeout-ms 120000 --skip-gui-tests `
+            --random-seed 0x7f78bbf `
+            --output-dir $logDir --output-filename pluginval.log
+
+          $log = Join-Path $logDir "pluginval.log"
+          Get-Content -LiteralPath $log
+          if ($LASTEXITCODE -ne 0 -or -not (Select-String -LiteralPath $log -Pattern '^SUCCESS$' -Quiet)) {
+            throw "pluginval validation failed"
+          }
+
+      - name: Upload pluginval log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pico2vibe-pluginval-windows-x64
+          path: ${{ env.BUILD_DIR }}/pluginval/pluginval.log
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload VST3 artifact
         uses: actions/upload-artifact@v4

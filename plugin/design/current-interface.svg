@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="840" height="510" viewBox="0 0 840 510" role="img" aria-labelledby="title desc">
   <title id="title">pico2vibe current JUCE interface</title>
-  <desc id="desc">Current 840 by 510 pixel testbench interface with selectors, eleven rotary controls, tempo sync, phase lock, bypass, and stereo meters.</desc>
+  <desc id="desc">Current 840 by 510 pixel testbench interface with preset A/B comparison, selectors, eleven rotary controls, tempo sync, phase lock, bypass, and stereo meters.</desc>
   <style>
     text { font-family: "Segoe UI", Arial, sans-serif; letter-spacing: 0; }
     .title { fill: #56a784; font-size: 25px; font-weight: 700; }
@@ -29,9 +29,17 @@
   <text class="subtitle" x="22" y="72">optical phase chorus / vibrato</text>
 
   <g aria-label="Preset selector">
-    <rect x="298" y="22" width="520" height="30" rx="2" fill="#201f1a" stroke="#3b3627"/>
+    <rect x="298" y="22" width="438" height="30" rx="2" fill="#201f1a" stroke="#3b3627"/>
     <text class="select-text" x="310" y="37">Classic Uni-Vibe</text>
-    <use href="#combo-arrow" x="794" y="34"/>
+    <use href="#combo-arrow" x="712" y="34"/>
+  </g>
+  <g aria-label="Comparison slot A selected">
+    <rect x="744" y="22" width="34" height="30" rx="2" fill="#31604c" stroke="#3b3627"/>
+    <text class="button-text" x="761" y="37" style="fill:#dbd5be">A</text>
+  </g>
+  <g aria-label="Comparison slot B">
+    <rect x="784" y="22" width="34" height="30" rx="2" fill="#201f1a" stroke="#3b3627"/>
+    <text class="button-text" x="801" y="37">B</text>
   </g>
   <g aria-label="Voicing selector">
     <rect x="298" y="60" width="130" height="40" rx="2" fill="#201f1a" stroke="#3b3627"/>

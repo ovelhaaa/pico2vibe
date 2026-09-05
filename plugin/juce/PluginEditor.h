@@ -25,6 +25,8 @@ private:
     juce::Label titleLabel;
     juce::Label subtitleLabel;
     juce::ComboBox presetBox;
+    juce::TextButton comparisonAButton { "A" };
+    juce::TextButton comparisonBButton { "B" };
     juce::ComboBox voicingBox;
     juce::ComboBox qualityBox;
     juce::TextButton tempoSyncButton;

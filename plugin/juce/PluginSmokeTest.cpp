@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 
+#include <array>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -54,6 +55,18 @@ void setParameter(Pico2VibeAudioProcessor& processor, const char* id, float valu
     auto* parameter = processor.parameters.getParameter(id);
     require(parameter != nullptr, std::string("missing parameter: ") + id);
     parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
+}
+
+float getParameterValue(Pico2VibeAudioProcessor& processor, const char* id) {
+    auto* parameter = processor.parameters.getParameter(id);
+    require(parameter != nullptr, std::string("missing parameter: ") + id);
+    return parameter->convertFrom0to1(parameter->getValue());
+}
+
+float getParameterDefault(Pico2VibeAudioProcessor& processor, const char* id) {
+    auto* parameter = processor.parameters.getParameter(id);
+    require(parameter != nullptr, std::string("missing parameter: ") + id);
+    return parameter->convertFrom0to1(parameter->getDefaultValue());
 }
 
 void fillInput(juce::AudioBuffer<float>& buffer, int64_t timelineSample) {
@@ -124,6 +137,7 @@ void runStereoTransportTest() {
     requireNear(processor.getTransportPhase(), -1.0f, 1.0e-5f, "phase lock activated without BPM");
 
     setParameter(processor, "phase_lock", 0.0f);
+    setParameter(processor, "bypass", 1.0f);
     playHead.set(96.0, 3.0, true);
     processAt(processor, buffer, 635, "free-running synchronized mode");
     requireNear(processor.getHostTempoBpm(), 96.0f, 1.0e-4f, "BPM sync stopped with phase lock disabled");
@@ -137,8 +151,12 @@ void runStereoTransportTest() {
     restored.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
     const auto* sync = restored.parameters.getRawParameterValue("tempo_sync");
     const auto* phaseLock = restored.parameters.getRawParameterValue("phase_lock");
+    const auto* bypass = restored.parameters.getRawParameterValue("bypass");
     require(sync != nullptr && sync->load() >= 0.5f, "tempo sync did not survive state restore");
     require(phaseLock != nullptr && phaseLock->load() < 0.5f, "phase lock did not survive state restore");
+    require(bypass != nullptr && bypass->load() >= 0.5f, "bypass did not survive state restore");
+    require(restored.getBypassParameter() == restored.parameters.getParameter("bypass"),
+            "JUCE bypass parameter is not backed by the saved APVTS parameter");
 }
 
 void runMonoSmokeTest() {
@@ -152,6 +170,142 @@ void runMonoSmokeTest() {
     juce::AudioBuffer<float> buffer(1, 31);
     processAt(processor, buffer, 0, "mono processing");
 }
+
+void runStateMigrationTest() {
+    Pico2VibeAudioProcessor source;
+    requireNear(getParameterValue(source, "depth"), 0.78f, 1.0e-5f,
+                "initial depth does not match the default factory preset");
+    requireNear(getParameterDefault(source, "depth"), 0.78f, 1.0e-5f,
+                "host depth default does not match the default factory preset");
+    setParameter(source, "depth", 0.42f);
+
+    juce::MemoryBlock currentState;
+    source.getStateInformation(currentState);
+    auto legacyXml = juce::AudioProcessor::getXmlFromBinary(
+        currentState.getData(), static_cast<int>(currentState.getSize()));
+    require(legacyXml != nullptr, "current state did not decode as XML");
+    require(legacyXml->getIntAttribute("state_version", 0) == 1,
+            "current state schema version is missing");
+
+    legacyXml->removeAttribute("state_version");
+    auto* phaseLockElement = legacyXml->getChildByAttribute("id", "phase_lock");
+    require(phaseLockElement != nullptr, "phase lock was missing from current state");
+    legacyXml->removeChildElement(phaseLockElement, true);
+
+    juce::MemoryBlock legacyState;
+    juce::AudioProcessor::copyXmlToBinary(*legacyXml, legacyState);
+
+    Pico2VibeAudioProcessor restored;
+    setParameter(restored, "depth", 0.91f);
+    setParameter(restored, "phase_lock", 0.0f);
+    restored.setStateInformation(legacyState.getData(), static_cast<int>(legacyState.getSize()));
+    requireNear(getParameterValue(restored, "depth"), 0.42f, 1.0e-5f,
+                "legacy state did not restore an existing parameter");
+    requireNear(getParameterValue(restored, "phase_lock"), 1.0f, 1.0e-5f,
+                "legacy state did not initialize a missing parameter from its default");
+
+    const std::array<unsigned char, 4> corruptState { 0xde, 0xad, 0xbe, 0xef };
+    restored.setStateInformation(corruptState.data(), static_cast<int>(corruptState.size()));
+    requireNear(getParameterValue(restored, "depth"), 0.42f, 1.0e-5f,
+                "corrupt state changed plugin parameters");
+}
+
+void runProgramTrackingTest() {
+    Pico2VibeAudioProcessor processor;
+    const int custom = Pico2VibeAudioProcessor::customProgramIndex();
+    require(processor.getNumPrograms() == custom + 1, "custom program is not exposed to the host");
+    require(processor.getCurrentProgram() == 0, "default factory program was not selected");
+    require(processor.getProgramName(custom) == "Custom", "custom program name is missing");
+
+    setParameter(processor, "depth", 0.31f);
+    require(processor.getCurrentProgram() == custom, "parameter edit did not select Custom");
+
+    processor.setCurrentProgram(1);
+    require(processor.getCurrentProgram() == 1, "factory program selection was not retained");
+    requireNear(getParameterValue(processor, "depth"), 0.84f, 1.0e-5f,
+                "factory program did not restore its depth");
+
+    setParameter(processor, "output_gain", 1.47f);
+    require(processor.getCurrentProgram() == custom, "secondary parameter edit did not select Custom");
+    processor.setCurrentProgram(2);
+    requireNear(getParameterValue(processor, "output_gain"), 1.0f, 1.0e-5f,
+                "factory program retained a parameter from the previous custom state");
+
+    setParameter(processor, "bypass", 1.0f);
+    require(processor.getCurrentProgram() == 2, "global bypass incorrectly selected Custom");
+
+    setParameter(processor, "tone_tilt", 0.37f);
+    require(processor.getCurrentProgram() == custom, "tone edit did not select Custom");
+    juce::MemoryBlock state;
+    processor.getStateInformation(state);
+    Pico2VibeAudioProcessor restored;
+    restored.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+    require(restored.getCurrentProgram() == custom, "Custom program did not survive state restore");
+    requireNear(getParameterValue(restored, "tone_tilt"), 0.37f, 1.0e-5f,
+                "Custom program parameter did not survive state restore");
+}
+
+void runRepeatedStateRestorationTest() {
+    Pico2VibeAudioProcessor processor;
+    juce::MemoryBlock originalState;
+    processor.getStateInformation(originalState);
+
+    for (auto* parameter : processor.getParameters()) {
+        if (parameter == processor.getBypassParameter()) continue;
+
+        const float originalValue = parameter->getValue();
+        parameter->setValue(0.496181f);
+        processor.setStateInformation(
+            originalState.getData(), static_cast<int>(originalState.getSize()));
+        requireNear(parameter->getValue(), originalValue, 1.0e-5f,
+                    "repeated state restore failed for " + parameter->getName(128).toStdString());
+    }
+}
+
+void runComparisonStateTest() {
+    Pico2VibeAudioProcessor processor;
+    require(processor.getComparisonSlot() == 0, "comparison did not start on slot A");
+    setParameter(processor, "depth", 0.24f);
+    setParameter(processor, "bypass", 1.0f);
+
+    processor.selectComparisonSlot(1);
+    require(processor.getComparisonSlot() == 1, "comparison did not switch to slot B");
+    requireNear(getParameterValue(processor, "depth"), 0.78f, 1.0e-5f,
+                "slot B did not retain its independent initial sound");
+    requireNear(getParameterValue(processor, "bypass"), 1.0f, 1.0e-5f,
+                "comparison switch did not preserve global bypass");
+    setParameter(processor, "depth", 0.66f);
+
+    processor.selectComparisonSlot(0);
+    requireNear(getParameterValue(processor, "depth"), 0.24f, 1.0e-5f,
+                "slot A sound was not recalled");
+    processor.selectComparisonSlot(1);
+    requireNear(getParameterValue(processor, "depth"), 0.66f, 1.0e-5f,
+                "slot B sound was not recalled");
+
+    juce::MemoryBlock projectState;
+    processor.getStateInformation(projectState);
+    Pico2VibeAudioProcessor restored;
+    restored.setStateInformation(projectState.getData(), static_cast<int>(projectState.getSize()));
+    require(restored.getComparisonSlot() == 1, "active comparison slot was not restored");
+    requireNear(getParameterValue(restored, "depth"), 0.66f, 1.0e-5f,
+                "active comparison sound was not restored");
+    restored.selectComparisonSlot(0);
+    requireNear(getParameterValue(restored, "depth"), 0.24f, 1.0e-5f,
+                "stored slot A did not survive project restore");
+
+    auto malformedXml = juce::AudioProcessor::getXmlFromBinary(
+        projectState.getData(), static_cast<int>(projectState.getSize()));
+    require(malformedXml != nullptr, "A/B project state did not decode as XML");
+    malformedXml->setAttribute("comparison_state_a", "999999999.invalid");
+    juce::MemoryBlock malformedState;
+    juce::AudioProcessor::copyXmlToBinary(*malformedXml, malformedState);
+    Pico2VibeAudioProcessor recovered;
+    recovered.setStateInformation(malformedState.getData(), static_cast<int>(malformedState.getSize()));
+    recovered.selectComparisonSlot(0);
+    requireNear(getParameterValue(recovered, "depth"), 0.66f, 1.0e-5f,
+                "malformed comparison slot did not fall back to the active sound");
+}
 }  // namespace
 
 int main() {
@@ -159,6 +313,10 @@ int main() {
         juce::ScopedJuceInitialiser_GUI initialiseJuce;
         runStereoTransportTest();
         runMonoSmokeTest();
+        runStateMigrationTest();
+        runProgramTrackingTest();
+        runRepeatedStateRestorationTest();
+        runComparisonStateTest();
         std::cout << "juce_plugin_smoke_test passed" << std::endl;
         return 0;
     } catch (const std::exception& e) {

@@ -71,7 +71,7 @@ cmake --build build/vst -j
 
 If JUCE is installed as a CMake package, omit `PICO2VIBE_JUCE_DIR`. The first wrapper exposes the shared DSP parameters, voicing, quality mode, factory presets, smoothed bypass and output metering for host-readiness testing.
 
-The `.github/workflows/vst.yml` workflow builds the Windows x64 VST3 on relevant pushes and pull requests, or on demand. Successful runs publish the complete plugin bundle as the `pico2vibe-vst3-windows-x64` artifact.
+The `.github/workflows/vst.yml` workflow builds the Windows x64 VST3 on relevant pushes and pull requests, or on demand. It runs the JUCE smoke tests and pluginval at strictness level 8 before publishing the complete plugin bundle as the `pico2vibe-vst3-windows-x64` artifact.
 
 ## Sound design
 

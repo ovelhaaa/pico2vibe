@@ -19,6 +19,8 @@ If JUCE is installed as a CMake package, omit `PICO2VIBE_JUCE_DIR`.
 The `Build VST3` workflow builds the Windows x64 Release bundle on pushes to
 `main`, pull requests that affect the plugin or shared DSP core, and manual
 runs. Download the `pico2vibe-vst3-windows-x64` artifact from the workflow run.
+The job also validates the bundle headlessly with pluginval 1.0.4 at strictness
+level 8 and publishes the validation log as `pico2vibe-pluginval-windows-x64`.
 
 When Tempo Sync is enabled, the plugin reads BPM from the host transport without
 writing over the automatable BPM parameter. The BPM control remains the fallback
@@ -31,4 +33,14 @@ same tempo. Hosts without valid BPM or PPQ automatically keep free-running.
 
 With `BUILD_TESTING=ON`, CTest runs a JUCE smoke test with a simulated host
 transport. It covers BPM and PPQ reads, loop/seek wrapping, stopped and missing
-transport fallbacks, state restoration, mono/stereo processing and finite output.
+transport fallbacks, versioned and legacy state restoration, corrupt-state
+rejection, mono/stereo processing and finite output. Missing parameters in older
+sessions are initialized from their declared defaults instead of transient values.
+
+Editing a sound parameter selects the host-visible `Custom` program. Factory
+program changes reset every sound parameter deterministically, and the editor's
+preset selector follows program changes made by the DAW.
+
+The A/B buttons keep two independent sound snapshots for fast comparison. Both
+slots and the active selection are stored in the project state, while bypass is
+treated as a global control and remains unchanged when switching sides.

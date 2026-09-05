@@ -54,12 +54,26 @@ Pico2VibeAudioProcessorEditor::Pico2VibeAudioProcessorEditor(Pico2VibeAudioProce
     addAndMakeVisible(subtitleLabel);
 
     presetBox.addItemList(Pico2VibeAudioProcessor::factoryPresetNames(), 1);
+    presetBox.addItem("Custom", Pico2VibeAudioProcessor::customProgramIndex() + 1);
     presetBox.setSelectedItemIndex(audioProcessor.getCurrentProgram(), juce::dontSendNotification);
     presetBox.onChange = [this] {
         const int selected = presetBox.getSelectedItemIndex();
-        if (selected >= 0) audioProcessor.setCurrentProgram(selected);
+        if (selected >= 0) audioProcessor.selectProgramFromEditor(selected);
     };
     addAndMakeVisible(presetBox);
+
+    for (auto* button : { &comparisonAButton, &comparisonBButton }) {
+        button->setClickingTogglesState(false);
+        button->setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(32, 31, 26));
+        button->setColour(juce::TextButton::buttonOnColourId, accentColour().darker(0.35f));
+        button->setColour(juce::TextButton::textColourOffId, mutedColour());
+        button->setColour(juce::TextButton::textColourOnId, textColour());
+        addAndMakeVisible(button);
+    }
+    comparisonAButton.setTooltip("Recall comparison slot A");
+    comparisonBButton.setTooltip("Recall comparison slot B");
+    comparisonAButton.onClick = [this] { audioProcessor.selectComparisonSlot(0); };
+    comparisonBButton.onClick = [this] { audioProcessor.selectComparisonSlot(1); };
 
     voicingBox.addItemList(Pico2VibeAudioProcessor::voicingChoices(), 1);
     addAndMakeVisible(voicingBox);
@@ -132,7 +146,12 @@ void Pico2VibeAudioProcessorEditor::resized() {
     subtitleLabel.setBounds(titleArea.removeFromTop(24));
 
     auto selectorArea = header.removeFromRight(520);
-    presetBox.setBounds(selectorArea.removeFromTop(kSelectorHeight));
+    auto presetRow = selectorArea.removeFromTop(kSelectorHeight);
+    comparisonBButton.setBounds(presetRow.removeFromRight(34));
+    presetRow.removeFromRight(6);
+    comparisonAButton.setBounds(presetRow.removeFromRight(34));
+    presetRow.removeFromRight(8);
+    presetBox.setBounds(presetRow);
     selectorArea.removeFromTop(8);
     const int selectorWidth = selectorArea.getWidth() / 4;
     voicingBox.setBounds(selectorArea.removeFromLeft(selectorWidth));
@@ -198,6 +217,14 @@ void Pico2VibeAudioProcessorEditor::timerCallback() {
     const float decay = 0.82f;
     meterLeft = juce::jmax(audioProcessor.getOutputMeterLeft(), meterLeft * decay);
     meterRight = juce::jmax(audioProcessor.getOutputMeterRight(), meterRight * decay);
+
+    const int program = audioProcessor.getCurrentProgram();
+    if (presetBox.getSelectedItemIndex() != program) {
+        presetBox.setSelectedItemIndex(program, juce::dontSendNotification);
+    }
+    const int comparisonSlot = audioProcessor.getComparisonSlot();
+    comparisonAButton.setToggleState(comparisonSlot == 0, juce::dontSendNotification);
+    comparisonBButton.setToggleState(comparisonSlot == 1, juce::dontSendNotification);
 
     const auto* syncValue = audioProcessor.parameters.getRawParameterValue("tempo_sync");
     const bool syncEnabled = syncValue != nullptr && syncValue->load() >= 0.5f;
