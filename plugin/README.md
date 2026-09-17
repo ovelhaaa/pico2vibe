@@ -45,6 +45,25 @@ The A/B buttons keep two independent sound snapshots for fast comparison. Both
 slots and the active selection are stored in the project state, while bypass is
 treated as a global control and remains unchanged when switching sides.
 
+## Editor
+
+The native JUCE controls follow `design/current-interface.svg`, at 840 x 510
+logical pixels. Resize up to 1680 x 1020 using the bottom-right grip or the host;
+the layout scales proportionally. Tab navigates the controls, arrow keys adjust
+knobs, and their value fields accept typed input. Double-click a knob to restore
+its parameter default. Tooltips explain tempo dependencies, and controls expose
+names and values to accessibility clients, including output peak descriptions.
+
+All eleven knobs, voicing, quality, sync, phase lock and bypass use APVTS
+attachments. Presets and A/B retain the processor's existing state operations.
+Disabled controls and their labels use the mockup's 38% opacity. Host BPM never
+overwrites the fallback parameter, and bypass leaves sound controls editable.
+
+The smoke test also exercises editor attachments in both directions, keyboard
+editing, preset/A/B recall, tempo-dependent enablement, reopening and resizing.
+Pass an absolute output directory to `Pico2VibePluginTests` to render PNG previews
+of the default, synced, bypass and enlarged editor states for visual inspection.
+
 The factory bank keeps the original six program indices and adds six production
 voices. Classic Uni-Vibe, Shin-ei Dark and Deja Lead cover the vintage/lead range;
 Voodoo Wide and Modern Hi-Fi provide controlled stereo options; Classic Vibrato,

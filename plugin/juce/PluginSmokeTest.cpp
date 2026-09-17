@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "PluginEditor.h"
 
 #include <array>
 #include <cmath>
@@ -174,9 +175,9 @@ void runMonoSmokeTest() {
 
 void runStateMigrationTest() {
     Pico2VibeAudioProcessor source;
-    requireNear(getParameterValue(source, "depth"), 0.74f, 1.0e-5f,
+    requireNear(getParameterValue(source, "depth"), 0.76f, 1.0e-5f,
                 "initial depth does not match the default factory preset");
-    requireNear(getParameterDefault(source, "depth"), 0.74f, 1.0e-5f,
+    requireNear(getParameterDefault(source, "depth"), 0.76f, 1.0e-5f,
                 "host depth default does not match the default factory preset");
     setParameter(source, "depth", 0.42f);
 
@@ -223,13 +224,13 @@ void runProgramTrackingTest() {
 
     processor.setCurrentProgram(1);
     require(processor.getCurrentProgram() == 1, "factory program selection was not retained");
-    requireNear(getParameterValue(processor, "depth"), 0.80f, 1.0e-5f,
+    requireNear(getParameterValue(processor, "depth"), 0.82f, 1.0e-5f,
                 "factory program did not restore its depth");
 
     setParameter(processor, "output_gain", 1.47f);
     require(processor.getCurrentProgram() == custom, "secondary parameter edit did not select Custom");
     processor.setCurrentProgram(2);
-    requireNear(getParameterValue(processor, "output_gain"), 1.0f, 1.0e-5f,
+    requireNear(getParameterValue(processor, "output_gain"), 1.03f, 1.0e-5f,
                 "factory program retained a parameter from the previous custom state");
 
     setParameter(processor, "bypass", 1.0f);
@@ -271,7 +272,7 @@ void runComparisonStateTest() {
 
     processor.selectComparisonSlot(1);
     require(processor.getComparisonSlot() == 1, "comparison did not switch to slot B");
-    requireNear(getParameterValue(processor, "depth"), 0.74f, 1.0e-5f,
+    requireNear(getParameterValue(processor, "depth"), 0.76f, 1.0e-5f,
                 "slot B did not retain its independent initial sound");
     requireNear(getParameterValue(processor, "bypass"), 1.0f, 1.0e-5f,
                 "comparison switch did not preserve global bypass");
@@ -379,12 +380,137 @@ void runFactoryPresetAudioTest() {
         require(monoRetention > 0.45f,
                 "poor mono compatibility for factory preset " + names[preset].toStdString());
     }
-    require(loudestRms / quietestRms < 1.55f,
+    require(loudestRms / quietestRms < 1.15f,
             "factory preset loudness spread is too large");
+}
+juce::Component* findControl(juce::Component& parent, const juce::String& id) {
+    if (parent.getComponentID() == id) return &parent;
+    for (auto* child : parent.getChildren())
+        if (auto* result = findControl(*child, id)) return result;
+    return nullptr;
+}
+
+void refreshEditor() {
+    juce::Thread::sleep(50);
+    juce::Timer::callPendingTimersSynchronously();
+}
+
+void runEditorTest(const juce::String& snapshotDirectory) {
+    Pico2VibeAudioProcessor processor;
+    processor.prepareToPlay(kSampleRate, 128);
+    Pico2VibeAudioProcessorEditor editor(processor);
+    auto slider = [&](const char* id) -> juce::Slider& {
+        auto* control = dynamic_cast<juce::Slider*>(findControl(editor, id));
+        require(control != nullptr, std::string("editor slider missing: ") + id);
+        require(control->getTitle().isNotEmpty(), "slider accessibility title missing");
+        return *control;
+    };
+    auto snapshot = [&](const char* name) {
+        if (snapshotDirectory.isEmpty()) return;
+        const juce::File directory(snapshotDirectory);
+        require(directory.createDirectory().wasOk(), "cannot create snapshot directory");
+        auto stream = directory.getChildFile(name).createOutputStream();
+        require(stream != nullptr, "cannot write editor snapshot");
+        stream->setPosition(0);
+        stream->truncate();
+        juce::PNGImageFormat png;
+        require(png.writeImageToStream(editor.createComponentSnapshot(editor.getLocalBounds()), *stream),
+                "cannot encode editor snapshot");
+    };
+    require(editor.isResizable(), "editor must be resizable");
+    require(slider("lfo_rate_hz").isEnabled(), "free rate disabled with sync off");
+    require(!slider("tempo_bpm").isEnabled(), "fallback enabled with sync off");
+    require(!slider("tempo_division_beats").isEnabled(), "division enabled with sync off");
+    require(!findControl(editor, "phase_lock")->isEnabled(), "phase lock enabled with sync off");
+    if (snapshotDirectory.isNotEmpty()) {
+        // Let JUCE's normal startup splash finish before capturing the design.
+        editor.createComponentSnapshot(editor.getLocalBounds());
+        for (int frame = 0; frame < 130; ++frame) refreshEditor();
+    }
+    snapshot("editor-default.png");
+
+    // Exercise every exposed slider in both directions through the real attachments.
+    for (const char* id : { "depth", "lfo_rate_hz", "mix", "feedback", "input_drive",
+                           "stereo_width", "tone_tilt", "noise_amount", "output_gain",
+                           "tempo_bpm", "tempo_division_beats" }) {
+        auto* parameter = processor.parameters.getParameter(id);
+        const float value = parameter->convertFrom0to1(0.63f);
+        setParameter(processor, id, value);
+        requireNear((float)slider(id).getValue(), getParameterValue(processor, id), 0.0001f,
+                    std::string("host to slider: ") + id);
+        slider(id).setValue(parameter->convertFrom0to1(0.31f), juce::sendNotificationSync);
+        requireNear(getParameterValue(processor, id), (float)slider(id).getValue(), 0.0001f,
+                    std::string("slider to host: ") + id);
+    }
+    for (const char* id : { "voicing", "quality" }) {
+        auto* box = dynamic_cast<juce::ComboBox*>(findControl(editor, id));
+        require(box != nullptr, "selector missing");
+        box->setSelectedItemIndex(2, juce::sendNotificationSync);
+        requireNear(getParameterValue(processor, id), 2.0f, 0.0f, "selector to host");
+        setParameter(processor, id, 1.0f);
+        require(box->getSelectedItemIndex() == 1, "host to selector");
+    }
+    for (const char* id : { "tempo_sync", "phase_lock", "bypass" }) {
+        auto* button = dynamic_cast<juce::Button*>(findControl(editor, id));
+        require(button != nullptr, "parameter button missing");
+        setParameter(processor, id, 0.0f);
+        require(!button->getToggleState(), "host to button");
+        button->setToggleState(true, juce::sendNotificationSync);
+        requireNear(getParameterValue(processor, id), 1.0f, 0.0f, "button to host");
+    }
+    refreshEditor();
+    require(!slider("lfo_rate_hz").isEnabled(), "rate enabled with sync on");
+    require(slider("tempo_bpm").isEnabled(), "fallback disabled without host tempo");
+    require(slider("tempo_division_beats").isEnabled(), "division disabled with sync on");
+    require(findControl(editor, "phase_lock")->isEnabled(), "phase lock disabled with sync on");
+    snapshot("editor-sync-fallback-bypass.png");
+
+    auto* preset = dynamic_cast<juce::ComboBox*>(findControl(editor, "preset"));
+    require(preset != nullptr, "preset selector missing");
+    preset->setSelectedItemIndex(3, juce::sendNotificationSync);
+    require(processor.getCurrentProgram() == 3, "editor preset recall failed");
+    slider("depth").keyPressed(juce::KeyPress(juce::KeyPress::rightKey));
+    refreshEditor();
+    require(preset->getSelectedItemIndex() == Pico2VibeAudioProcessor::customProgramIndex(),
+            "keyboard edit did not select Custom");
+    const float slotADepth = getParameterValue(processor, "depth");
+    auto* comparisonA = dynamic_cast<juce::Button*>(findControl(editor, "comparison_a"));
+    auto* comparisonB = dynamic_cast<juce::Button*>(findControl(editor, "comparison_b"));
+    require(comparisonA != nullptr && comparisonB != nullptr, "comparison buttons missing");
+    comparisonB->onClick();
+    slider("depth").setValue(0.17, juce::sendNotificationSync);
+    comparisonA->onClick();
+    refreshEditor();
+    require(comparisonA->getToggleState() && !comparisonB->getToggleState(), "A/B selection stale");
+    requireNear((float)slider("depth").getValue(), slotADepth, 0.0001f, "A/B slider recall failed");
+    setParameter(processor, "tempo_sync", 1.0f);
+
+    MockPlayHead playHead;
+    processor.setPlayHead(&playHead);
+    playHead.set(137.0, 4.0, true);
+    juce::AudioBuffer<float> buffer(2, 128);
+    const float fallback = getParameterValue(processor, "tempo_bpm");
+    processAt(processor, buffer, 0, "editor host tempo");
+    refreshEditor();
+    require(!slider("tempo_bpm").isEnabled(), "fallback enabled with host tempo");
+    requireNear(getParameterValue(processor, "tempo_bpm"), fallback, 0.0f, "UI overwrote fallback BPM");
+    auto* sync = dynamic_cast<juce::TextButton*>(findControl(editor, "tempo_sync"));
+    require(sync->getButtonText() == "137.0 BPM", "host tempo display missing");
+    snapshot("editor-sync-host.png");
+    editor.setSize(1260, 765);
+    snapshot("editor-large.png");
+    editor.setSize(1000, 510); // A host can ignore the resize constraint.
+    const auto* depth = findControl(editor, "depth");
+    require(editor.getLocalBounds().contains(editor.getLocalArea(depth, depth->getLocalBounds())),
+            "scaled control outside editor");
+    processor.setPlayHead(nullptr);
+    // Reopening must immediately reflect restored APVTS state, before any timer tick.
+    Pico2VibeAudioProcessorEditor reopened(processor);
+    require(!findControl(reopened, "lfo_rate_hz")->isEnabled(), "reopened editor has stale sync state");
 }
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
     try {
         juce::ScopedJuceInitialiser_GUI initialiseJuce;
         runStereoTransportTest();
@@ -394,6 +520,7 @@ int main() {
         runRepeatedStateRestorationTest();
         runComparisonStateTest();
         runFactoryPresetAudioTest();
+        runEditorTest(argc > 1 ? juce::String::fromUTF8(argv[1]) : juce::String());
         std::cout << "juce_plugin_smoke_test passed" << std::endl;
         return 0;
     } catch (const std::exception& e) {

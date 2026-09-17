@@ -71,3 +71,9 @@ add_executable(block_size_invariance_test
 )
 configure_desktop_tool_target(block_size_invariance_test)
 add_test(NAME block_size_invariance_test COMMAND block_size_invariance_test)
+
+add_executable(greybox_stage_test
+    src/greybox_stage_test.cpp
+)
+configure_desktop_tool_target(greybox_stage_test)
+add_test(NAME greybox_stage_test COMMAND greybox_stage_test)

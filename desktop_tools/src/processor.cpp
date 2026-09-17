@@ -34,6 +34,11 @@ void debug_assert_vibe_state_finite(const Vibe* vibe) {
         debug_assert_finite(vibe->stage[i].ecvc.y1, "stage.ecvc.y1");
         debug_assert_finite(vibe->stage[i].vevo.x1, "stage.vevo.x1");
         debug_assert_finite(vibe->stage[i].vevo.y1, "stage.vevo.y1");
+        debug_assert_finite(vibe->greybox_stage[i].x1, "greybox_stage.x1");
+        debug_assert_finite(vibe->greybox_stage[i].y1, "greybox_stage.y1");
+        debug_assert_finite(vibe->greybox_coefs[i].b0, "greybox_coefs.b0");
+        debug_assert_finite(vibe->greybox_coefs[i].b1, "greybox_coefs.b1");
+        debug_assert_finite(vibe->greybox_coefs[i].a1, "greybox_coefs.a1");
     }
 }
 #else
@@ -86,6 +91,11 @@ void sanitize_vibe_state(Vibe* vibe) {
         if (!std::isfinite(vibe->stage[i].ecvc.y1)) vibe->stage[i].ecvc.y1 = 0.0f;
         if (!std::isfinite(vibe->stage[i].vevo.x1)) vibe->stage[i].vevo.x1 = 0.0f;
         if (!std::isfinite(vibe->stage[i].vevo.y1)) vibe->stage[i].vevo.y1 = 0.0f;
+        if (!std::isfinite(vibe->greybox_stage[i].x1)) vibe->greybox_stage[i].x1 = 0.0f;
+        if (!std::isfinite(vibe->greybox_stage[i].y1)) vibe->greybox_stage[i].y1 = 0.0f;
+        if (!std::isfinite(vibe->greybox_coefs[i].b0)) vibe->greybox_coefs[i].b0 = 0.0f;
+        if (!std::isfinite(vibe->greybox_coefs[i].b1)) vibe->greybox_coefs[i].b1 = 0.0f;
+        if (!std::isfinite(vibe->greybox_coefs[i].a1)) vibe->greybox_coefs[i].a1 = 0.0f;
     }
 }
 

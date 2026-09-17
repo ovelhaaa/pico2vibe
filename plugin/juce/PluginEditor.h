@@ -11,7 +11,7 @@ class Pico2VibeAudioProcessorEditor final : public juce::AudioProcessorEditor,
                                             private juce::Timer {
 public:
     explicit Pico2VibeAudioProcessorEditor(Pico2VibeAudioProcessor& owner);
-    ~Pico2VibeAudioProcessorEditor() override = default;
+    ~Pico2VibeAudioProcessorEditor() override;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -22,6 +22,11 @@ private:
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
     Pico2VibeAudioProcessor& audioProcessor;
+    class InterfaceLookAndFeel;
+    std::unique_ptr<InterfaceLookAndFeel> interfaceLookAndFeel;
+    // Logical SVG coordinates; a single transform scales painting and native controls.
+    juce::Component content;
+    juce::TooltipWindow tooltipWindow { this, 650 };
     juce::Label titleLabel;
     juce::Label subtitleLabel;
     juce::ComboBox presetBox;
@@ -42,6 +47,9 @@ private:
     std::array<std::unique_ptr<SliderAttachment>, 11> sliderAttachments;
     float meterLeft = 0.0f;
     float meterRight = 0.0f;
+    juce::Label meterLeftLabel;
+    juce::Label meterRightLabel;
+    juce::AffineTransform layoutTransform;
 
     void configureSlider(juce::Slider& slider, const juce::String& suffix);
     void configureLabel(juce::Label& label, const juce::String& text);

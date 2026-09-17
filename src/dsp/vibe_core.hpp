@@ -1096,22 +1096,57 @@ struct VibeOversampleState {
     }
 };
 
-struct Allpass1 {
-    float z = 0.0f;
+// One phase cell from the DAFx-19 grey-box derivation. Unlike an ideal
+// all-pass, the real transistor stage has unequal collector/emitter gains and
+// a finite DC blocking capacitor. The resulting moving high shelf is an
+// important part of the characteristic Uni-Vibe "throb" in chorus mode.
+struct GreyBoxStageCoefficients {
+    float b0 = 0.0f;
+    float b1 = 0.0f;
+    float a1 = 0.0f;
+};
 
-    float process(float x, float a) {
-        const float y = -a * x + z;
-        z = zap_denormal(x + a * y);
-        return zap_denormal(y);
+struct GreyBoxStage {
+    float x1 = 0.0f;
+    float y1 = 0.0f;
+
+    float process(float x, const GreyBoxStageCoefficients &c) {
+        const float y = c.b0 * x + c.b1 * x1 - c.a1 * y1;
+        x1 = zap_denormal(x);
+        y1 = zap_denormal(y);
+        return y1;
     }
 };
 
-static inline float allpass_coef_from_fc(float fc, float sample_rate_hz) {
+static inline float vibe_fast_tan(float x) {
+    // Pade approximation used only for coefficient updates. The corner is
+    // clamped below Nyquist, keeping this accurate and inexpensive on RP2350.
+    const float x2 = x * x;
+    return x / fmaxf(0.20f, 1.0f - x2 * 0.33333333f);
+}
+
+static inline GreyBoxStageCoefficients greybox_stage_coefficients(float series_resistance_ohms,
+                                                                  float phase_cap_f,
+                                                                  float dc_block_cap_f,
+                                                                  float emitter_gain,
+                                                                  float collector_gain,
+                                                                  float sample_rate_hz) {
     const float sr = clampf(sample_rate_hz, kMinVibeSampleRateHz, kMaxVibeSampleRateHz);
-    fc = clampf(fc, 20.0f, fminf(12000.0f, sr * 0.45f));
-    const float x = kPi * fc * (1.0f / sr);
-    const float t = x / (1.0f - x * x * 0.33333333f);
-    return clampf((1.0f - t) / (1.0f + t), -0.995f, 0.995f);
+    const float cp = fmaxf(phase_cap_f, 100.0e-12f);
+    const float cdc = fmaxf(dc_block_cap_f, 0.10e-6f);
+    const float r = fmaxf(series_resistance_ohms, 100.0f);
+    const float c_eq = (cp * cdc) / (cp + cdc);
+    const float fc = clampf(1.0f / (2.0f * kPi * r * c_eq), 20.0f, fminf(12000.0f, sr * 0.45f));
+    const float t = vibe_fast_tan(kPi * fc / sr);
+    const float kc = cp / (cp + cdc);
+    const float ke = cdc / (cp + cdc);
+    const float inv_den = 1.0f / (1.0f + t);
+
+    GreyBoxStageCoefficients c;
+    c.b0 = (emitter_gain * ke * t - collector_gain * (kc * t + 1.0f)) * inv_den;
+    c.b1 = (emitter_gain * ke * t - collector_gain * (kc * t - 1.0f)) * inv_den;
+    c.a1 = clampf((t - 1.0f) * inv_den, -0.9995f, 0.9995f);
+    return c;
 }
 
 // ============================================================================
@@ -1165,9 +1200,9 @@ private:
     float min_stage_res[8] = {0};
 
     PhaseStage stage[8];
-    Allpass1 ap_stage[8];
-    float ap_a[8] = {0};
-    float ap_a_target[8] = {0};
+    GreyBoxStage greybox_stage[8];
+    GreyBoxStageCoefficients greybox_coefs[8]{};
+    GreyBoxStageCoefficients greybox_targets[8]{};
 
     float fbr = 0.0f, fbl = 0.0f;
     float gain_bjt = 0.0f, k = 0.0f, R1 = 0.0f, C2 = 0.0f, C1[8] = {0}, beta = 0.0f;
@@ -1210,7 +1245,7 @@ private:
     float bjt_shape(float data, float drive);
     float bjt_shape_oversampled(float data, float drive, VibeOversampleState &state);
     float soft_clip_cubic_oversampled(float data, VibeOversampleState &state);
-    float allpass_phase_network_process(float x, int first_stage, float coeff_slew);
+    float greybox_phase_network_process(float x, int first_stage, float coeff_slew);
     float hp_pre(float x, float hz, float &x1, float &y1);
     float feedback_profile_process(float x, FeedbackProfile profile, VibeProfile vibe_profile, FeedbackMidState &mid_state);
     void set_filter_coefs(fparams &target, float n0, float n1, float d1);
@@ -1766,10 +1801,20 @@ void Vibe::init_vibes() {
     channel_lamp_slew_r = clampf(1.0f + params.tuning.stage_time_spread * noise_bipolar(component_rng), 0.85f, 1.15f);
     for (int i = 0; i < 8; i++) {
         const float mismatch_scale = (params.profile == VibeProfile::Modern) ? 0.75f : 1.15f;
-        float cap_var = 1.0f + 0.10f * noise_bipolar(component_rng);
+        // The measured capacitor sequence establishes the double-beat. Keep
+        // unit-to-unit tolerance subtle enough that it does not erase it.
+        const float cap_tolerance = (params.profile == VibeProfile::Modern) ? 0.010f : 0.025f;
+        float cap_var = 1.0f + cap_tolerance * noise_bipolar(component_rng);
         C1[i] = base_C1[i] * cap_var;
-        // Pequeno mismatch físico (aproximação) para quebrar simetria perfeita entre células.
-        stage[i].ldr_mismatch = 1.0f + (0.025f * mismatch_scale) * noise_bipolar(component_rng);
+        // Table 1 average LDR measurements, normalized to stage 3. This keeps
+        // the four cells optically distinct instead of using random mismatch
+        // alone, while the small random term still represents unit variance.
+        static constexpr float kMeasuredLdrMeanScale[4] = {
+            0.405f / 0.290f, 0.233f / 0.290f, 1.0f, 0.240f / 0.290f
+        };
+        const float measured_ldr_amount = (params.profile == VibeProfile::Classic) ? 1.0f : 0.45f;
+        stage[i].ldr_mismatch = lerpf(1.0f, kMeasuredLdrMeanScale[i & 3], measured_ldr_amount)
+                                * (1.0f + (0.012f * mismatch_scale) * noise_bipolar(component_rng));
         // Channel lamp slew (not per-stage) gives mild optical inertia mismatch between L/R.
         stage[i].oldcvolt = 0.0f;
         en1[i] = k * R1 * C1[i];
@@ -1778,9 +1823,9 @@ void Vibe::init_vibes() {
         stage[i].vcvo = {};
         stage[i].ecvc = {};
         stage[i].vevo = {};
-        ap_stage[i] = {};
-        ap_a[i] = 0.0f;
-        ap_a_target[i] = 0.0f;
+        greybox_stage[i] = {};
+        greybox_coefs[i] = {};
+        greybox_targets[i] = {};
 #if VIBE_LIMIT_470PF_STAGE
         if (C1[i] < 1.0e-9f) {
             const float max_corner_hz = clampf(VIBE_470PF_MAX_CORNER_HZ, 6000.0f, 22000.0f);
@@ -1798,7 +1843,7 @@ void Vibe::init_vibes() {
     modulate_allpass(mod_res_l, mod_res_r);
     modulate_legacy_network(mod_res_l, mod_res_r);
     for (int i = 0; i < 8; ++i) {
-        ap_a[i] = ap_a_target[i];
+        greybox_coefs[i] = greybox_targets[i];
     }
 }
 
@@ -1854,9 +1899,9 @@ void Vibe::reset_audio_state(bool reset_lfo) {
         stage[i].ecvc = {};
         stage[i].vevo = {};
         stage[i].oldcvolt = 0.0f;
-        ap_stage[i] = {};
-        ap_a[i] = 0.0f;
-        ap_a_target[i] = 0.0f;
+        greybox_stage[i] = {};
+        greybox_coefs[i] = {};
+        greybox_targets[i] = {};
     }
 
     if (reset_lfo) {
@@ -1867,11 +1912,15 @@ void Vibe::reset_audio_state(bool reset_lfo) {
     modulate_allpass(mod_res_l, mod_res_r);
     modulate_legacy_network(mod_res_l, mod_res_r);
     for (int i = 0; i < 8; ++i) {
-        ap_a[i] = ap_a_target[i];
+        greybox_coefs[i] = greybox_targets[i];
     }
 }
 
 void Vibe::modulate_allpass(float res_l, float res_r) {
+    // Measured on the original unit used in the DAFx-19 study (Table 1).
+    static constexpr float kEmitterGain[4] = {1.01f, 0.98f, 0.97f, 0.95f};
+    static constexpr float kCollectorGain[4] = {1.11f, 1.09f, 1.10f, 1.09f};
+    constexpr float kDcBlockCap = 1.0e-6f;
     for (int i = 0; i < 8; i++) {
         const float base_res = (i < 4) ? res_l : res_r;
         float min_stage_res_val = params.tuning.ldr_min_ohms;
@@ -1882,8 +1931,13 @@ void Vibe::modulate_allpass(float res_l, float res_r) {
                                        min_stage_res_val,
                                        params.tuning.ldr_max_ohms);
         const float currentRv = 4700.0f + stage_res;
-        const float fc = 1.0f / (2.0f * kPi * currentRv * C1[i]);
-        ap_a_target[i] = allpass_coef_from_fc(fc, sample_rate_hz);
+        const int cell = i & 3;
+        const float model_amount = (params.profile == VibeProfile::Classic) ? 1.0f : 0.45f;
+        const float emitter_gain = lerpf(1.0f, kEmitterGain[cell], model_amount);
+        const float collector_gain = lerpf(1.0f, kCollectorGain[cell], model_amount);
+        const float effective_dc_cap = kDcBlockCap / fmaxf(model_amount, 0.001f);
+        greybox_targets[i] = greybox_stage_coefficients(currentRv, C1[i], effective_dc_cap,
+                                                        emitter_gain, collector_gain, sample_rate_hz);
     }
 }
 
@@ -1940,13 +1994,17 @@ void Vibe::modulate(float res_l, float res_r) {
 }
 
 
-float Vibe::allpass_phase_network_process(float x, int first_stage, float coeff_slew) {
+float Vibe::greybox_phase_network_process(float x, int first_stage, float coeff_slew) {
     float y = x;
     const int end = first_stage + 4;
     for (int j = first_stage; j < end; ++j) {
-        ap_a[j] += coeff_slew * (ap_a_target[j] - ap_a[j]);
-        ap_a[j] = clampf(ap_a[j], -0.995f, 0.995f);
-        y = ap_stage[j].process(y, ap_a[j]);
+        GreyBoxStageCoefficients &c = greybox_coefs[j];
+        const GreyBoxStageCoefficients &target = greybox_targets[j];
+        c.b0 += coeff_slew * (target.b0 - c.b0);
+        c.b1 += coeff_slew * (target.b1 - c.b1);
+        c.a1 += coeff_slew * (target.a1 - c.a1);
+        c.a1 = clampf(c.a1, -0.9995f, 0.9995f);
+        y = greybox_stage[j].process(y, c);
     }
     return y;
 }
@@ -2007,6 +2065,10 @@ void Vibe::out(float *smpsl, float *smpsr, int frames) {
     const float profile_stereo_reduction = classic_chorus_profile ? 0.88f : (classic_profile ? 0.93f : 1.06f);
     const float stereo_width = clampf(smoothed_user.stereo_width, 0.0f, 1.35f);
     const float classic_stereo_reduction = clampf(profile_stereo_reduction * stereo_width, 0.0f, 1.35f);
+    // The ideal all-pass path had unity worst-case gain. The measured
+    // collector legs do not, so normalize only the optional feedback loop by
+    // the four-stage high-frequency gain. The audible wet-path shelf remains.
+    const float phase_feedback_trim = (params.profile == VibeProfile::Classic) ? 0.69f : 0.84f;
     const float ldr_coeff_alpha = 1.0f - expf(-inv_sample_rate / clampf(VIBE_LDR_COEFF_SMOOTH_TAU_SEC, 0.0005f, 0.005f));
     const float wet_smooth_base_hz = (params.profile == VibeProfile::Modern) ? 7200.0f : 5400.0f;
     const float quality_smooth_scale = (quality == VibeQualityMode::High) ? 1.18f : ((quality == VibeQualityMode::Eco) ? 0.76f : 1.0f);
@@ -2139,11 +2201,11 @@ void Vibe::out(float *smpsl, float *smpsr, int frames) {
                 wet_phase_l = bjt_shape(ocvolt + vibefilter(wet_phase_l, &stage[j].vevo), dynamic_drive_l);
             }
         } else {
-            wet_phase_l = allpass_phase_network_process(wet_phase_l, 0, ldr_coeff_alpha);
+            wet_phase_l = greybox_phase_network_process(wet_phase_l, 0, ldr_coeff_alpha);
             stage[3].oldcvolt = clampf(wet_phase_l, -stage_limit, stage_limit);
         }
 
-        float fb_raw_l = clampf(wet_phase_l * feedback, -1.20f, 1.20f);
+        float fb_raw_l = clampf(wet_phase_l * feedback * phase_feedback_trim, -1.20f, 1.20f);
         float fb_sat_l = soft_clip_cubic_oversampled(fb_raw_l * fb_sat_drive, feedback_sat_os_l);
         fb_sat_l = clampf(fb_sat_l, -1.15f, 1.15f);
         const float fb_abs_l = fabsf(fb_sat_l);
@@ -2179,11 +2241,11 @@ void Vibe::out(float *smpsl, float *smpsr, int frames) {
                 wet_phase_r = bjt_shape(ocvolt + vibefilter(wet_phase_r, &stage[j].vevo), dynamic_drive_r);
             }
         } else {
-            wet_phase_r = allpass_phase_network_process(wet_phase_r, 4, ldr_coeff_alpha);
+            wet_phase_r = greybox_phase_network_process(wet_phase_r, 4, ldr_coeff_alpha);
             stage[7].oldcvolt = clampf(wet_phase_r, -stage_limit, stage_limit);
         }
 
-        float fb_raw_r = clampf(wet_phase_r * feedback, -1.20f, 1.20f);
+        float fb_raw_r = clampf(wet_phase_r * feedback * phase_feedback_trim, -1.20f, 1.20f);
         float fb_sat_r = soft_clip_cubic_oversampled(fb_raw_r * fb_sat_drive, feedback_sat_os_r);
         fb_sat_r = clampf(fb_sat_r, -1.15f, 1.15f);
         const float fb_abs_r = fabsf(fb_sat_r);
@@ -2235,8 +2297,11 @@ void Vibe::out(float *smpsl, float *smpsr, int frames) {
         const float wet_comp_l = 1.0f + (wet_comp_l_raw_state - 1.0f) * depth_comp_amt * auto_level;
         const float wet_comp_r = 1.0f + (wet_comp_r_raw_state - 1.0f) * depth_comp_amt * auto_level;
 
-        // Vibrato remains 100% wet, but trim depth-dependently to avoid overstatement at low rates/high depth.
-        const float vibrato_trim = clampf(1.0f - (0.05f + 0.07f * auto_level) * depth * depth, 0.85f, 1.0f);
+        // The measured grey-box cells attenuate more below their moving shelf
+        // than ideal all-passes. Keep vibrato near unity without flattening
+        // that spectral motion or applying a fast, audible level follower.
+        const float vibrato_trim = clampf(1.015f - 0.025f * (1.0f - auto_level) * depth * depth,
+                                          0.98f, 1.015f);
         const float wet_mode_trim = mode_chorus ? 1.0f : vibrato_trim;
         wet_l *= wet_comp_l * wet_mode_trim;
         wet_r *= wet_comp_r * wet_mode_trim;
