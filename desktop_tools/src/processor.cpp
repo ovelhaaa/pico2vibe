@@ -148,6 +148,10 @@ struct DesktopUnivibeProcessor::Impl {
 
     explicit Impl(const UnivibeParams& p) : user(p) {
         std::srand(p.seed);
+        VibeOutputConditionerConfig conditioner_config;
+        conditioner_config.soft_limiter = !p.disable_output_limiter;
+        conditioner_config.auto_headroom = !p.disable_output_headroom;
+        output_conditioner.configure(conditioner_config);
         output_conditioner.reset(p.sample_rate_hz, p.seed ^ 0xC001C0DEu);
         improved = new Vibe(out_l.data(), out_r.data());
         improved->prepare(p.sample_rate_hz);
@@ -202,6 +206,8 @@ struct DesktopUnivibeProcessor::Impl {
 
         improved->set_optical_topology(p.single_lamp_reference ? OpticalTopology::SingleLampReference : OpticalTopology::StudioStereo);
         improved->set_optical_mode(p.legacy_optical ? OpticalMode::LegacyOptical : OpticalMode::ReferenceOptical);
+        improved->analysis_disable_auto_level(p.disable_auto_level);
+        improved->analysis_disable_wet_compensation(p.disable_wet_compensation);
 
         if (p.engine_mode == UnivibeParams::EngineMode::legacy || p.compare_mode == UnivibeParams::CompareMode::difference) {
             legacy = new Vibe(diff_l.data(), diff_r.data());
@@ -233,7 +239,7 @@ struct DesktopUnivibeProcessor::Impl {
     }
 
     void write_output_sample(std::vector<float>& left, std::vector<float>& right, size_t index, float out_l_value, float out_r_value) {
-        if (user.output_conditioning) {
+        if (user.output_conditioning && !user.disable_final_conditioning) {
             output_conditioner.process_frame(out_l_value, out_r_value, &out_l_value, &out_r_value);
         }
         left[index] = out_l_value;

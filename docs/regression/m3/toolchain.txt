@@ -1,0 +1,8 @@
+g++ (MinGW-W64 x86_64-ucrt-posix-seh, built by Brecht Sanders, r2) 14.2.0
+cmake version 4.1.1
+desktop_flags=-O3 -DNDEBUG, C++17
+CPU benchmark clocks=std::chrono::steady_clock
+pluginval=1.0.4, strictness=8, seed=0x7f78bbf
+JUCE=existing 7.0.12 checkout
+WASM=C:/emsdk/upstream/emscripten/em++.bat, production flags/exports
+RP2350=existing build/m2/firmware, pico2, SDK 2.2.0

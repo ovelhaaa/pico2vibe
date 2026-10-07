@@ -1,0 +1,7 @@
+algorithm,ns_per_sample,state_bytes,total_object_bytes,latency_samples
+direct,8.5247,0,4728,0
+midpoint,20.7249,25,4728,0.888889
+adaa1,76.0876,25,4728,0.5
+fir2,399.223,4648,4728,64
+fir4,795.695,4648,4728,64
+tanh_reference,15.5376,0,4728,0

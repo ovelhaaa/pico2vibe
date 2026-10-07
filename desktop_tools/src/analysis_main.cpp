@@ -41,6 +41,8 @@ struct RunConfig {
     float noise_amount = 0.0f;
     bool calibration_suite = false;
     bool write_mix_sweep = false;
+    bool disable_output_limiter = false, disable_output_headroom = false;
+    bool disable_final_conditioning = false, disable_wet_compensation = false, disable_auto_level = false;
 };
 
 struct FreqPoint {
@@ -72,6 +74,8 @@ void usage() {
         << "  --calibration-suite            Roda voicings de referencia e gera calibration_summary.csv\n"
         << "  --mix-sweep                    Mede notch/mono/imagem em varios pontos de mix\n"
         << "  --help\n\n"
+        << "  --no-output-limiter --no-output-headroom --no-final-conditioning\n"
+        << "  --no-wet-compensation --no-auto-level  Desktop characterization only\n"
         << "Exemplo:\n"
         << "  dsp_validate --out-dir out/new --preset classic --preset deep\n"
         << "               --compare-to out/old\n";
@@ -661,7 +665,7 @@ struct CalibrationMetrics {
     float mono_fold_db = -120.0f;
     float lr_correlation = 0.0f;
     float worst_thd_db = -120.0f;
-    float alias_proxy_db = -120.0f;
+    float broadband_hf_db = -120.0f;
 };
 
 struct CalibrationTarget {
@@ -670,7 +674,7 @@ struct CalibrationTarget {
     float side_max_db = -8.0f;
     float mono_fold_min_db = -3.0f;
     float correlation_min = 0.25f;
-    float alias_max_db = -68.0f;
+    float broadband_hf_max_db = -68.0f;
 };
 
 float summary_value(const std::map<std::string, float>& summary, const std::string& key, float fallback = 0.0f) {
@@ -698,13 +702,13 @@ float calibration_score(const CalibrationMetrics& m, const CalibrationTarget& t)
     const float side_penalty = range_penalty(m.side_to_mid_db, t.side_min_db, t.side_max_db);
     const float mono_penalty = std::max(0.0f, t.mono_fold_min_db - m.mono_fold_db);
     const float corr_penalty = std::max(0.0f, t.correlation_min - m.lr_correlation);
-    const float alias_penalty = std::max(0.0f, m.alias_proxy_db - t.alias_max_db);
+    const float hf_penalty = std::max(0.0f, m.broadband_hf_db - t.broadband_hf_max_db);
     const float score = 100.0f
                         - 5.0f * notch_penalty
                         - 2.0f * side_penalty
                         - 8.0f * mono_penalty
                         - 20.0f * corr_penalty
-                        - 0.7f * alias_penalty;
+                        - 0.7f * hf_penalty;
     return std::max(0.0f, std::min(100.0f, score));
 }
 
@@ -719,7 +723,7 @@ CalibrationMetrics build_calibration_metrics(const std::string& preset,
     m.mono_fold_db = summary_value(summary, "guitar_mono_fold_db", -120.0f);
     m.lr_correlation = summary_value(summary, "guitar_lr_correlation");
     m.worst_thd_db = summary_value(summary, "worst_thd_db", -120.0f);
-    m.alias_proxy_db = summary_value(summary, "guitar_alias_proxy_db", -120.0f);
+    m.broadband_hf_db = summary_value(summary, "guitar_broadband_hf_db", -120.0f);
     m.score = calibration_score(m, calibration_target(preset));
     return m;
 }
@@ -737,18 +741,18 @@ void write_calibration_score(const fs::path& path, const CalibrationMetrics& m) 
     out << "guitar_mono_fold_db," << m.mono_fold_db << "\n";
     out << "guitar_lr_correlation," << m.lr_correlation << "\n";
     out << "worst_thd_db," << m.worst_thd_db << "\n";
-    out << "guitar_alias_proxy_db," << m.alias_proxy_db << "\n";
+    out << "guitar_broadband_hf_db," << m.broadband_hf_db << "\n";
 }
 
 void write_calibration_summary(const fs::path& path, const std::vector<CalibrationMetrics>& rows) {
     std::ofstream out(path);
     if (!out) throw std::runtime_error("Falha escrevendo CSV: " + path.string());
-    out << "preset,score,deepest_notch_db,tracked_notch_span_oct,tracked_notch_count,guitar_side_to_mid_db,guitar_mono_fold_db,guitar_lr_correlation,worst_thd_db,guitar_alias_proxy_db\n";
+    out << "preset,score,deepest_notch_db,tracked_notch_span_oct,tracked_notch_count,guitar_side_to_mid_db,guitar_mono_fold_db,guitar_lr_correlation,worst_thd_db,guitar_broadband_hf_db\n";
     out << std::fixed << std::setprecision(6);
     for (const auto& m : rows) {
         out << m.preset << ',' << m.score << ',' << m.deepest_notch_db << ',' << m.notch_span_oct << ','
             << m.notch_count << ',' << m.side_to_mid_db << ',' << m.mono_fold_db << ','
-            << m.lr_correlation << ',' << m.worst_thd_db << ',' << m.alias_proxy_db << "\n";
+            << m.lr_correlation << ',' << m.worst_thd_db << ',' << m.broadband_hf_db << "\n";
     }
 }
 
@@ -799,6 +803,11 @@ CalibrationMetrics run_preset(const std::string& preset_name, const RunConfig& c
     params.single_lamp_reference = cfg.single_lamp_reference;
     params.legacy_optical = cfg.legacy_optical;
     params.original_factory_levels = cfg.original_factory_levels;
+    params.disable_output_limiter = cfg.disable_output_limiter;
+    params.disable_output_headroom = cfg.disable_output_headroom;
+    params.disable_final_conditioning = cfg.disable_final_conditioning;
+    params.disable_wet_compensation = cfg.disable_wet_compensation;
+    params.disable_auto_level = cfg.disable_auto_level;
     params.tempo_sync = cfg.tempo_sync;
     params.tempo_bpm = cfg.tempo_bpm;
     params.tempo_division_beats = cfg.tempo_division_beats;
@@ -818,7 +827,7 @@ CalibrationMetrics run_preset(const std::string& preset_name, const RunConfig& c
 
     std::ofstream thd_csv(metric_dir / "thd_vs_drive.csv");
     if (!thd_csv) throw std::runtime_error("Falha abrindo thd_vs_drive.csv");
-    thd_csv << "sine_level_db,thd_ratio,thd_db,alias_proxy_hf_db\n";
+    thd_csv << "sine_level_db,thd_ratio,thd_db,broadband_hf_db\n";
     thd_csv << std::fixed << std::setprecision(6);
 
     float worst_thd_db = -120.0f;
@@ -858,8 +867,8 @@ CalibrationMetrics run_preset(const std::string& preset_name, const RunConfig& c
     const auto sweep_image = stereo_image_metrics(sweep_out);
 
     summary["worst_thd_db"] = worst_thd_db;
-    summary["guitar_alias_proxy_db"] = high_freq_ratio_db(guitar_out.left, 12000.0f);
-    summary["sweep_alias_proxy_db"] = high_freq_ratio_db(sweep_out.left, 12000.0f);
+    summary["guitar_broadband_hf_db"] = high_freq_ratio_db(guitar_out.left, 12000.0f);
+    summary["sweep_broadband_hf_db"] = high_freq_ratio_db(sweep_out.left, 12000.0f);
     summary["guitar_side_to_mid_db"] = guitar_image.side_to_mid_db;
     summary["guitar_mono_fold_db"] = guitar_image.mono_fold_db;
     summary["guitar_lr_correlation"] = guitar_image.lr_correlation;
@@ -958,6 +967,16 @@ RunConfig parse_args(int argc, char** argv) {
             cfg.calibration_suite = true;
             cfg.presets = calibration_presets();
             cfg.write_mix_sweep = true;
+        } else if (arg == "--no-output-limiter") {
+            cfg.disable_output_limiter = true;
+        } else if (arg == "--no-output-headroom") {
+            cfg.disable_output_headroom = true;
+        } else if (arg == "--no-final-conditioning") {
+            cfg.disable_final_conditioning = true;
+        } else if (arg == "--no-wet-compensation") {
+            cfg.disable_wet_compensation = true;
+        } else if (arg == "--no-auto-level") {
+            cfg.disable_auto_level = true;
         } else if (arg == "--mix-sweep") {
             cfg.write_mix_sweep = true;
         } else {

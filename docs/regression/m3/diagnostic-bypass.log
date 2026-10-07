@@ -1,0 +1,3 @@
+Rodando harness offline (sr=44100) em: build/m3/diagnostic-bypass
+  preset: factory_0
+Concluido. Veja WAVs e CSVs em: build/m3/diagnostic-bypass

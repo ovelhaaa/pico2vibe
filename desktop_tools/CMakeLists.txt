@@ -8,6 +8,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 function(configure_desktop_tool_target target)
+    target_compile_definitions(${target} PRIVATE VIBE_DESKTOP_ANALYSIS=1)
     target_include_directories(${target} PRIVATE
         "${CMAKE_CURRENT_LIST_DIR}/src"
         "${CMAKE_CURRENT_LIST_DIR}/../src"
@@ -91,3 +92,10 @@ configure_desktop_tool_target(optical_analyze)
 
 add_executable(notch_trajectory src/notch_trajectory.cpp)
 configure_desktop_tool_target(notch_trajectory)
+
+add_executable(nonlinear_analyze src/nonlinear_analyze.cpp)
+configure_desktop_tool_target(nonlinear_analyze)
+add_executable(nonlinear_test src/nonlinear_test.cpp)
+configure_desktop_tool_target(nonlinear_test)
+add_test(NAME nonlinear_test COMMAND nonlinear_test)
+add_test(NAME nonlinear_analyzer_self_test COMMAND nonlinear_analyze --self-test)

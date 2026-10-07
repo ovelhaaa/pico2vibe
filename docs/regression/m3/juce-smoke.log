@@ -1,0 +1,34 @@
+UpdateCTestConfiguration  from :C:/progs/pico/pico2vibe/build/m2-1/vst/DartConfiguration.tcl
+Parse Config file:C:/progs/pico/pico2vibe/build/m2-1/vst/DartConfiguration.tcl
+Test project C:/progs/pico/pico2vibe/build/m2-1/vst
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 1
+    Start 1: juce_plugin_smoke_test
+
+1: Test command: C:\progs\pico\pico2vibe\build\m2-1\vst\plugin\juce\Pico2VibePluginTests.exe
+1: Working Directory: C:/progs/pico/pico2vibe/build/m2-1/vst/plugin/juce
+1: Test timeout computed to be: 1500
+1: preset 0 Classic Uni-Vibe: rms=0.0533047, peak=0.155058, mono=0.992458
+1: preset 1 Shin-ei Dark: rms=0.0564611, peak=0.165972, mono=0.989041
+1: preset 2 Deja Lead: rms=0.0526061, peak=0.155713, mono=0.991358
+1: preset 3 Voodoo Wide: rms=0.0495163, peak=0.140851, mono=0.890063
+1: preset 4 Modern Hi-Fi: rms=0.0393018, peak=0.0861384, mono=0.991356
+1: preset 5 Classic Vibrato: rms=0.0454128, peak=0.105744, mono=0.997871
+1: preset 6 Hendrix Deep: rms=0.0452842, peak=0.160975, mono=0.925136
+1: preset 7 Gentle Clean: rms=0.0348993, peak=0.0709937, mono=0.999877
+1: preset 8 Rotary Fast: rms=0.0377485, peak=0.0790654, mono=0.998735
+1: preset 9 Bass Anchor: rms=0.0369014, peak=0.079478, mono=0.999939
+1: preset 10 Lamp Drift: rms=0.0445153, peak=0.133681, mono=0.994659
+1: preset 11 Psychedelic Slow: rms=0.0369001, peak=0.148016, mono=0.905171
+1: PRODUCT loudness criterion (<1.15): ratio=1.61783 OUTSIDE criterion; pending mastering
+1: juce_plugin_smoke_test passed
+1/1 Test #1: juce_plugin_smoke_test ...........   Passed    1.92 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   1.93 sec

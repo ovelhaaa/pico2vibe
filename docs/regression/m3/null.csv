@@ -1,0 +1,7 @@
+algorithm,frequency,gain_alignment,residual_dbc
+direct,79.4037,1,-300
+midpoint,79.4037,1.00005,-94.7546
+adaa1,79.4037,1.00001,-110.034
+fir2,79.4037,1,-141.386
+fir4,79.4037,1,-141.961
+tanh_reference,79.4037,1.01478,-46.4338
