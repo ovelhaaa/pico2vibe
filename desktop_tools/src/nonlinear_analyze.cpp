@@ -1,59 +1,4 @@
-#include "nonlinear_candidates.hpp"
-#include <complex>
-#include <vector>
-#include <fstream>
-#include <filesystem>
-#include <chrono>
-#include <iostream>
-#include <iomanip>
-#include <stdexcept>
-
-using namespace nonlinear;
-constexpr int N = 32768;
-using Spectrum = std::vector<std::complex<double>>;
-void fft(Spectrum& a) {
-    const int n=int(a.size());
-    for (int i=1,j=0;i<n;++i) {
-        int b=n>>1;
-        for (;j&b;b>>=1) j^=b;
-        j^=b; if(i<j) std::swap(a[i],a[j]);
-    }
-    for(int len=2;len<=n;len*=2) {
-        const auto wlen=std::polar(1.0,-2*pi/len);
-        for(int i=0;i<n;i+=len) {
-            std::complex<double> w=1;
-            for(int j=0;j<len/2;++j) {
-                auto u=a[i+j], v=a[i+j+len/2]*w;
-                a[i+j]=u+v; a[i+j+len/2]=u-v; w*=wlen;
-            }
-        }
-    }
-}
-Spectrum spectrum(const std::vector<double>& y) {
-    Spectrum a(y.size());
-    for(size_t i=0;i<y.size();++i) a[i]=y[i]*(.5-.5*std::cos(2*pi*i/y.size()));
-    fft(a); return a;
-}
-double db(double energy) { return 10*std::log10(std::max(1e-30,energy)); }
-double bin_energy(const Spectrum& a,int bin) {
-    double e=0; for(int k=std::max(1,bin-2);k<=std::min(int(a.size()/2)-1,bin+2);++k) e+=std::norm(a[k]);
-    return e;
-}
-void mark(std::vector<bool>& mask,int bin) {
-    for(int k=std::max(1,bin-2);k<=std::min(N/2-1,bin+2);++k) mask[k]=true;
-}
-int fold(int k) { k=std::abs(k)%N; return k>N/2 ? N-k:k; }
-std::vector<double> render(Processor& p,double sr,double amp,const std::vector<int>& bins) {
-    std::vector<double> y(N);
-    for(int i=-N/4;i<N;++i) {
-        double x=0;
-        for(size_t j=0;j<bins.size();++j) x+=amp/bins.size()*std::sin(2*pi*bins[j]*i/N+.37*j);
-        const double v=p.process(x);
-        if(!std::isfinite(v)) throw std::runtime_error("nonfinite candidate");
-        if(i>=0) y[i]=v;
-    }
-    (void)sr; return y;
-}
+#include "nonlinear_measurement.hpp"
 int main(int argc,char** argv) {
  try {
     // Calibration with known harmonic, folded harmonic and unrelated residual.
@@ -91,10 +36,10 @@ int main(int argc,char** argv) {
         Transfer t; t.drive=d;t.asym=a; const double x=i*.01, delta=1e-3;
         curves<<d<<','<<a<<','<<x<<','<<t(x)<<','<<(t(x+delta)-t(x-delta))/(2*delta)<<','<<(x==0 ? (t(delta)-t(-delta))/(2*delta):t(x)/x)<<','<<t.tanh_reference(x)<<'\n';
     }
-    const std::array<Mode,6> modes={Mode::Direct,Mode::Midpoint,Mode::ADAA,Mode::Fir2,Mode::Fir4,Mode::TanhReference};
+    const std::array<Mode,10> modes={Mode::Direct,Mode::Midpoint,Mode::ADAA,Mode::Fir2,Mode::Fir4,Mode::TanhReference,Mode::Allpass2,Mode::Allpass4,Mode::Allpass2ADAA,Mode::Elliptic2};
     for(bool bjt:{true,false}) for(double sr:{44100.,48000.,96000.,192000.})
-      for(double d: {1.5,3.2}) for(double requested:{80.,440.,1000.,3000.,7000.,9000.,10000.,12000.,15000.}) {
-        if(!bjt && d==3.2) continue;
+      for(double d: {.8,1.5,3.2}) for(double requested:{80.,440.,1000.,3000.,7000.,9000.,10000.,12000.,15000.}) {
+        if(!bjt && d!=1.5) continue;
         const int bin=int(std::round(requested*N/sr));
         const double freq=bin*sr/N;
         for(double level:{-60.,-36.,-24.,-18.,-12.,-9.,-6.,-3.,0.}) for(Mode mode:modes) {
@@ -162,15 +107,15 @@ int main(int argc,char** argv) {
             multi<<(bjt?"bjt":"rational_limiter")<<','<<sr<<','<<name(m)<<','<<db(imd*norm)<<','<<db(ae*norm)<<','<<db(res*norm)<<','<<db(diff*norm)<<','<<collisions<<'\n';
         }
     }
-    cpu<<"algorithm,ns_per_sample,state_bytes,total_object_bytes,latency_samples\n";
-    nulls<<"algorithm,frequency,gain_alignment,residual_dbc\n";
+    cpu<<"algorithm,ns_per_sample,state_bytes,total_object_bytes,legacy_nominal_delay_samples\n";
+    nulls<<"algorithm,frequency,gain_alignment,residual_dbc,phase_only_residual_dbc\n";
     volatile double sink=0;
     for(Mode m:modes) {
         Processor p(m,{}); auto input=render(p,44100,.7,{59}); p.reset();
         auto start=std::chrono::steady_clock::now();
         for(int run=0;run<8;++run) for(double v:input) sink=p.process(v);
         auto elapsed=std::chrono::duration<double,std::nano>(std::chrono::steady_clock::now()-start).count();
-        cpu<<name(m)<<','<<elapsed/(8*N)<<','<<(m==Mode::Fir2||m==Mode::Fir4 ? sizeof(Fir):m==Mode::Direct||m==Mode::TanhReference?0:sizeof(double)*3+sizeof(bool))<<','<<sizeof(p)<<','<<(m==Mode::Fir2||m==Mode::Fir4 ? 64:m==Mode::ADAA?.5:m==Mode::Midpoint?.5+(.28/.72):0)<<'\n';
+        cpu<<name(m)<<','<<elapsed/(8*N)<<','<<(m==Mode::Fir2||m==Mode::Fir4 ? sizeof(Fir):m==Mode::Direct||m==Mode::TanhReference?0:m==Mode::Elliptic2?sizeof(Elliptic2x):m==Mode::Allpass2||m==Mode::Allpass4||m==Mode::Allpass2ADAA?sizeof(VibeAAState):sizeof(double)*3+sizeof(bool))<<','<<sizeof(p)<<','<<(m==Mode::Fir2||m==Mode::Fir4 ? 64:m==Mode::ADAA?.5:m==Mode::Midpoint?.5+(.28/.72):m==Mode::Direct||m==Mode::TanhReference?0:std::numeric_limits<double>::quiet_NaN())<<'\n';
         Processor q(m,{}), direct(Mode::Direct,{});auto y=render(q,44100,.7,{59}), target=render(direct,44100,.7,{59});
         // FIR delay is integer; ADAA/midpoint require fractional phase alignment.
         // Coherent periodic null: align before windowing; a delayed Hann window
@@ -183,7 +128,8 @@ int main(int argc,char** argv) {
             yy+=std::norm(a[k]);yb+=(a[k]*std::conj(b[k])).real();bb+=std::norm(b[k]);
         }
         double g=yb/yy,error=0;for(int k=1;k<N/2;++k) error+=std::norm(g*a[k]-b[k]);
-        nulls<<name(m)<<','<<59*44100./N<<','<<g<<','<<db(error/bb)<<'\n';
+        double phase_only=0;for(int k=1;k<N/2;++k)phase_only+=std::norm(a[k]-b[k]);
+        nulls<<name(m)<<','<<59*44100./N<<','<<g<<','<<db(error/bb)<<','<<db(phase_only/bb)<<'\n';
     }
     std::cout<<"Nonlinear analysis written to "<<out<<"; N="<<N<<"; sink="<<sink<<'\n';
     return 0;

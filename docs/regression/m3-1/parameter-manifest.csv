@@ -1,0 +1,21 @@
+id,stable_name,label,unit,min,max,default,flags
+0,depth,Depth,ratio,0,1,0.85,continuous
+1,feedback,Feedback,ratio,0,0.65,0.3,continuous
+2,mix,Mix,ratio,0,1,0.5,continuous
+3,input_drive,Input Drive,x,0.5,6,1.65,continuous
+4,output_gain,Output Gain,x,0.25,2,1,output
+5,sweep_min,Sweep Min,ratio,0,1,0.58,continuous
+6,sweep_max,Sweep Max,ratio,0,1,0.98,continuous
+7,lfo_rate_hz,Rate,Hz,0.02,12,1.2,log_scale
+8,drift_amount,Drift Amount,ratio,0,0.05,0.018,continuous
+9,drift_rate_hz,Drift Rate,Hz,0.005,0.5,0.08,log_scale
+10,pre_hpf_hz,Pre HPF,Hz,8,160,22,log_scale
+11,tone_tilt,Tone Tilt,signed_ratio,-1,1,0,continuous
+12,sat_asymmetry,Saturation Asymmetry,signed_ratio,-0.25,0.25,0.04,continuous
+13,sat_out_trim,Saturation Trim,x,0.6,1.2,0.82,output
+14,stereo_width,Stereo Width,ratio,0,1.35,0.75,continuous
+15,lamp_lag,Lamp Lag,x,0.35,2.5,1,continuous
+16,tempo_sync,Tempo Sync,switch,0,1,0,boolean|tempo
+17,tempo_bpm,Tempo BPM,BPM,30,300,120,tempo
+18,tempo_division_beats,Tempo Division,beats,0.25,16,1,tempo
+19,noise_amount,Noise,ratio,0,1,0,continuous

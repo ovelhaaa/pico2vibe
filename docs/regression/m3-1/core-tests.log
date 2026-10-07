@@ -1,0 +1,29 @@
+Test project C:/progs/pico/pico2vibe/build/desktop_tools
+      Start  1: silence_invariant_active
+ 1/12 Test  #1: silence_invariant_active ..............   Passed    0.46 sec
+      Start  2: silence_invariant_feedback_off
+ 2/12 Test  #2: silence_invariant_feedback_off ........   Passed    0.45 sec
+      Start  3: silence_invariant_modulation_frozen
+ 3/12 Test  #3: silence_invariant_modulation_frozen ...   Passed    0.38 sec
+      Start  4: phase_notch_test
+ 4/12 Test  #4: phase_notch_test ......................   Passed    0.60 sec
+      Start  5: block_size_invariance_test
+ 5/12 Test  #5: block_size_invariance_test ............   Passed    0.06 sec
+      Start  6: greybox_stage_test
+ 6/12 Test  #6: greybox_stage_test ....................   Passed    0.05 sec
+      Start  7: output_conditioner_test
+ 7/12 Test  #7: output_conditioner_test ...............   Passed    0.06 sec
+      Start  8: optical_model_test
+ 8/12 Test  #8: optical_model_test ....................   Passed    1.67 sec
+      Start  9: nonlinear_test
+ 9/12 Test  #9: nonlinear_test ........................   Passed    0.42 sec
+      Start 10: nonlinear_analyzer_self_test
+10/12 Test #10: nonlinear_analyzer_self_test ..........   Passed    0.10 sec
+      Start 11: low_latency_state_test
+11/12 Test #11: low_latency_state_test ................   Passed   25.98 sec
+      Start 12: low_latency_extreme_test
+12/12 Test #12: low_latency_extreme_test ..............   Passed   12.55 sec
+
+100% tests passed, 0 tests failed out of 12
+
+Total Test time (real) =  42.80 sec

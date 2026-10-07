@@ -62,7 +62,7 @@ int main(int argc,char** argv) {
             const double e=1e-4;
             check(std::abs((t.integral(x+e)-t.integral(x-e))/(2*e)-t(x))<2e-6,"primitive derivative");
         }
-        for(Mode m:{Mode::Direct,Mode::Midpoint,Mode::ADAA,Mode::Fir2,Mode::Fir4}) {
+        for(Mode m:{Mode::Direct,Mode::Midpoint,Mode::ADAA,Mode::Fir2,Mode::Fir4,Mode::Allpass2,Mode::Allpass4,Mode::Allpass2ADAA,Mode::Elliptic2}) {
             Processor p(m,t);double maxstep=0,previous=0,peak=0;
             for(int i=0;i<2048;++i) {
                 double x=i<256?0:i<1024?.15:i<1536?-.15:1e-12;
@@ -78,7 +78,7 @@ int main(int argc,char** argv) {
             }
             p.reset();double settled=0;
             for(int i=0;i<4096;++i) settled=p.process(.1);
-            check(std::abs(settled-t(.1))<2e-6,"DC transfer consistency across Quality/candidates");
+            check(std::abs(settled-t(.1))<(m==Mode::Elliptic2 ? .01*std::max(.01,std::abs(t(.1))):2e-6),"DC transfer consistency across Quality/candidates");
             if(report) report<<"step,"<<name(m)<<",maximum_sample_delta,"<<maxstep<<'\n';
             if(transients) {
                 const double endpoints=std::max(std::abs(t(.15)),std::abs(t(-.15)));
@@ -109,7 +109,7 @@ int main(int argc,char** argv) {
         check(delta<.5,"automation discontinuity");
         if(report) report<<"automation,"<<int(quality)<<",block_error,"<<difference<<"\nautomation,"<<int(quality)<<",max_delta,"<<delta<<'\n';
     }
-    for(Mode m:{Mode::Direct,Mode::Midpoint,Mode::ADAA,Mode::Fir2,Mode::Fir4}) for(bool ramp:{false,true}) {
+    for(Mode m:{Mode::Direct,Mode::Midpoint,Mode::ADAA,Mode::Fir2,Mode::Fir4,Mode::Allpass2,Mode::Allpass4,Mode::Allpass2ADAA,Mode::Elliptic2}) for(bool ramp:{false,true}) {
         Processor p(m,{});double last=0,delta=0;
         for(int i=0;i<8192;++i) {
             const double control=ramp ? double(i)/8191:double((i/256)&1);

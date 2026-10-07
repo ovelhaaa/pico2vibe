@@ -1,0 +1,19 @@
+[0/2] Re-checking globbed directories...
+[1/5] Building CXX object plugin/juce/CMakeFiles/Pico2VibePlugin.dir/PluginProcessor.cpp.obj
+In file included from C:/progs/pico/pico2vibe/src/dsp/vibe_core.hpp:6,
+                 from C:/progs/pico/pico2vibe/plugin/juce/PluginProcessor.cpp:4:
+C:/progs/pico/pico2vibe/src/dsp/optical_model.hpp: In member function 'const OpticalFrame& OpticalModel::process_sample(float, float, float, float, float)':
+C:/progs/pico/pico2vibe/src/dsp/optical_model.hpp:115:22: warning: comparing floating-point with '==' or '!=' is unsafe [-Wfloat-equal]
+  115 |         if (regionLo != cachedRegionLo_ || regionHi != cachedRegionHi_) {
+      |             ~~~~~~~~~^~~~~~~~~~~~~~~~~~
+C:/progs/pico/pico2vibe/src/dsp/optical_model.hpp:115:53: warning: comparing floating-point with '==' or '!=' is unsafe [-Wfloat-equal]
+  115 |         if (regionLo != cachedRegionLo_ || regionHi != cachedRegionHi_) {
+      |                                            ~~~~~~~~~^~~~~~~~~~~~~~~~~~
+C:/progs/pico/pico2vibe/src/dsp/vibe_core.hpp: In member function 'void Vibe::out(float*, float*, int)':
+C:/progs/pico/pico2vibe/src/dsp/vibe_core.hpp:2250:56: warning: comparing floating-point with '==' or '!=' is unsafe [-Wfloat-equal]
+ 2250 |         if (processed_sample_count && targets[control] != nonlinear_targets[control])
+      |                                       ~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[2/5] Linking CXX static library plugin\juce\Pico2VibePlugin_artefacts\Release\libpico2vibe_SharedCode.a
+[3/5] Linking CXX executable plugin\juce\Pico2VibePluginTests.exe
+[4/5] Linking CXX shared module plugin\juce\Pico2VibePlugin_artefacts\Release\VST3\pico2vibe.vst3\Contents\x86_64-win\pico2vibe.vst3
+removing moduleinfo.json
