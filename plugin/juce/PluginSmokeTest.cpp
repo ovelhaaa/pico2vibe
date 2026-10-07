@@ -247,7 +247,7 @@ void runProgramTrackingTest() {
     setParameter(processor, "output_gain", 1.47f);
     require(processor.getCurrentProgram() == custom, "secondary parameter edit did not select Custom");
     processor.setCurrentProgram(2);
-    requireNear(getParameterValue(processor, "output_gain"), 1.03f, 1.0e-5f,
+    requireNear(getParameterValue(processor, "output_gain"), 1.09f, 1.0e-5f,
                 "factory program retained a parameter from the previous custom state");
 
     setParameter(processor, "bypass", 1.0f);

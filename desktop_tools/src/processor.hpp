@@ -37,6 +37,8 @@ struct UnivibeParams {
     };
 
     // Optional shared plugin factory bank index; -1 keeps CLI voicing controls.
+    bool legacy_optical = false;
+    bool original_factory_levels = false;
     int factory_preset = -1;
     bool mode_chorus = true;
     float sample_rate_hz = 44100.0f;

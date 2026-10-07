@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include "optical_model.hpp"
 
 #define SAMPLE_RATE     44100.0f
 #define SAMPLE_RATE_HZ  44100u
@@ -992,6 +993,8 @@ static VibePreset make_vibe_preset(VibeVoicing voicing) {
 class EffectLFO {
 private:
     float phase = 0.0f;
+    uint32_t reference_phase_ticks = 0;
+    float right_phase = 0.0f;
     float shape_state_l = 0.0f;
     float shape_state_r = 0.0f;
     float drift_state = 0.0f;
@@ -1028,21 +1031,66 @@ private:
     }
 
 public:
+    float phase_left() const { return phase; }
+    float phase_right() const { return right_phase; }
+    static float reference_excitation(float p) {
+        static constexpr float lut[257] = {
+        0.0f, 0.000150590652f, 0.000602271897f, 0.00135477166f, 0.00240763666f, 0.0037602327f, 0.00541174502f, 0.00736117881f,
+        0.0096073598f, 0.012148935f, 0.0149843734f, 0.0181119671f, 0.0215298321f, 0.0252359097f, 0.0292279674f, 0.0335036006f,
+        0.0380602337f, 0.0428951221f, 0.0480053534f, 0.0533878494f, 0.0590393678f, 0.0649565044f, 0.071135695f, 0.0775732174f,
+        0.0842651938f, 0.0912075934f, 0.0983962343f, 0.105826786f, 0.113494773f, 0.121395577f, 0.129524437f, 0.137876459f,
+        0.146446609f, 0.155229728f, 0.164220523f, 0.173413579f, 0.182803358f, 0.192384205f, 0.202150348f, 0.212095904f,
+        0.222214883f, 0.23250119f, 0.242948628f, 0.253550904f, 0.264301632f, 0.275194335f, 0.286222453f, 0.297379343f,
+        0.308658284f, 0.320052482f, 0.331555073f, 0.34315913f, 0.354857661f, 0.366643621f, 0.37850991f, 0.39044938f,
+        0.402454839f, 0.414519056f, 0.426634763f, 0.438794662f, 0.45099143f, 0.463217718f, 0.475466163f, 0.487729386f,
+        0.5f, 0.512270614f, 0.524533837f, 0.536782282f, 0.54900857f, 0.561205338f, 0.573365237f, 0.585480944f,
+        0.597545161f, 0.60955062f, 0.62149009f, 0.633356379f, 0.645142339f, 0.65684087f, 0.668444927f, 0.679947518f,
+        0.691341716f, 0.702620657f, 0.713777547f, 0.724805665f, 0.735698368f, 0.746449096f, 0.757051372f, 0.76749881f,
+        0.777785117f, 0.787904096f, 0.797849652f, 0.807615795f, 0.817196642f, 0.826586421f, 0.835779477f, 0.844770272f,
+        0.853553391f, 0.862123541f, 0.870475563f, 0.878604423f, 0.886505227f, 0.894173214f, 0.901603766f, 0.908792407f,
+        0.915734806f, 0.922426783f, 0.928864305f, 0.935043496f, 0.940960632f, 0.946612151f, 0.951994647f, 0.957104878f,
+        0.961939766f, 0.966496399f, 0.970772033f, 0.97476409f, 0.978470168f, 0.981888033f, 0.985015627f, 0.987851065f,
+        0.99039264f, 0.992638821f, 0.994588255f, 0.996239767f, 0.997592363f, 0.998645228f, 0.999397728f, 0.999849409f,
+        1.0f, 0.999849409f, 0.999397728f, 0.998645228f, 0.997592363f, 0.996239767f, 0.994588255f, 0.992638821f,
+        0.99039264f, 0.987851065f, 0.985015627f, 0.981888033f, 0.978470168f, 0.97476409f, 0.970772033f, 0.966496399f,
+        0.961939766f, 0.957104878f, 0.951994647f, 0.946612151f, 0.940960632f, 0.935043496f, 0.928864305f, 0.922426783f,
+        0.915734806f, 0.908792407f, 0.901603766f, 0.894173214f, 0.886505227f, 0.878604423f, 0.870475563f, 0.862123541f,
+        0.853553391f, 0.844770272f, 0.835779477f, 0.826586421f, 0.817196642f, 0.807615795f, 0.797849652f, 0.787904096f,
+        0.777785117f, 0.76749881f, 0.757051372f, 0.746449096f, 0.735698368f, 0.724805665f, 0.713777547f, 0.702620657f,
+        0.691341716f, 0.679947518f, 0.668444927f, 0.65684087f, 0.645142339f, 0.633356379f, 0.62149009f, 0.60955062f,
+        0.597545161f, 0.585480944f, 0.573365237f, 0.561205338f, 0.54900857f, 0.536782282f, 0.524533837f, 0.512270614f,
+        0.5f, 0.487729386f, 0.475466163f, 0.463217718f, 0.45099143f, 0.438794662f, 0.426634763f, 0.414519056f,
+        0.402454839f, 0.39044938f, 0.37850991f, 0.366643621f, 0.354857661f, 0.34315913f, 0.331555073f, 0.320052482f,
+        0.308658284f, 0.297379343f, 0.286222453f, 0.275194335f, 0.264301632f, 0.253550904f, 0.242948628f, 0.23250119f,
+        0.222214883f, 0.212095904f, 0.202150348f, 0.192384205f, 0.182803358f, 0.173413579f, 0.164220523f, 0.155229728f,
+        0.146446609f, 0.137876459f, 0.129524437f, 0.121395577f, 0.113494773f, 0.105826786f, 0.0983962343f, 0.0912075934f,
+        0.0842651938f, 0.0775732174f, 0.071135695f, 0.0649565044f, 0.0590393678f, 0.0533878494f, 0.0480053534f, 0.0428951221f,
+        0.0380602337f, 0.0335036006f, 0.0292279674f, 0.0252359097f, 0.0215298321f, 0.0181119671f, 0.0149843734f, 0.012148935f,
+        0.0096073598f, 0.00736117881f, 0.00541174502f, 0.0037602327f, 0.00240763666f, 0.00135477166f, 0.000602271897f, 0.000150590652f,
+        0.0f
+        };
+        p -= floorf(p);
+        float pos = p * 256;
+        int i = (int)pos;
+        return lerpf(lut[i], lut[i+1], pos-i);
+    }
     void setPhase(float normalized_phase) {
         phase = normalized_phase - floorf(normalized_phase);
         if (phase < 0.0f) phase += 1.0f;
+        reference_phase_ticks = static_cast<uint32_t>(phase * 4294967296.0f);
     }
 
     void reseed(uint32_t seed) {
         drift_rng = seed ? seed : 0xA341316Cu;
         drift_state = 0.0f;
         phase = 0.0f;
+        reference_phase_ticks = 0;
         shape_state_l = 0.0f;
         shape_state_r = 0.0f;
         drift_lfo_phase = 0.0f;
     }
 
-    void processSample(float *l, float *r, const VibeUserParams &user, const VibeTuningParams &tuning, LfoShape shape, VibeProfile profile, float drift_alpha, float smoothing, float inv_sample_rate) {
+    void processSample(float *l, float *r, const VibeUserParams &user, const VibeTuningParams &tuning, LfoShape shape, VibeProfile profile, float drift_alpha, float smoothing, float inv_sample_rate, bool reference = false) {
         const float freq = tempo_synced_lfo_rate_hz(user.lfo_rate_hz, user.tempo_sync, user.tempo_bpm, user.tempo_division_beats);
         const float drift_amount = clampf(user.drift_amount, 0.0f, 0.05f);
         const float drift_rate_hz = clampf(user.drift_rate_hz, 0.005f, 0.5f);
@@ -1053,10 +1101,18 @@ public:
         drift_lfo_phase += drift_rate_hz * inv_sample_rate;
         if (drift_lfo_phase >= 1.0f) drift_lfo_phase -= 1.0f;
         const float profile_drift_scale = (profile == VibeProfile::Modern) ? 0.82f : 1.08f;
-        const float drift = 1.0f + (drift_amount * profile_drift_scale) * (0.65f * drift_state + 0.35f * sinf(2.0f * kPi * drift_lfo_phase));
+        const float drift = 1.0f + (drift_amount * profile_drift_scale) * (0.65f * drift_state + 0.35f * (reference ? (2.0f * reference_excitation(drift_lfo_phase + 0.25f) - 1.0f) : sinf(2.0f * kPi * drift_lfo_phase)));
 
-        phase += freq * drift * inv_sample_rate;
-        if (phase >= 1.0f) phase -= 1.0f;
+        if (reference) {
+            // Integer accumulator avoids float addition losing low-rate phase
+            // increments at 192 kHz. Overflow wraps without a software double.
+            const uint32_t step = static_cast<uint32_t>(freq * drift * (4294967296.0f * inv_sample_rate) + 0.5f);
+            reference_phase_ticks += step;
+            phase = float(reference_phase_ticks >> 8) * (1.0f / 16777216.0f);
+        } else {
+            phase += freq * drift * inv_sample_rate;
+            if (phase >= 1.0f) phase -= 1.0f;
+        }
 
         const float stereo_scale = (profile == VibeProfile::Modern) ? 1.06f : 0.92f;
         const float width = clampf(user.stereo_width, 0.0f, 1.35f);
@@ -1064,6 +1120,12 @@ public:
         if (p_r < 0.0f) p_r += 1.0f;
         if (p_r >= 1.0f) p_r -= 1.0f;
 
+        right_phase = p_r;
+        if (reference) {
+            *l = reference_excitation(phase);
+            *r = reference_excitation(p_r);
+            return;
+        }
         const float raw_l = apply_shape(shape, phase);
         const float raw_r = apply_shape(shape, p_r);
 
@@ -1181,6 +1243,10 @@ public:
     void set_quality_mode(VibeQualityMode mode);
     VibeQualityMode quality_mode() const { return quality; }
 
+    void set_optical_mode(OpticalMode mode) { optical_mode = mode; reset_audio_state(true); }
+    OpticalMode get_optical_mode() const { return optical_mode; }
+    const OpticalFrame& optical_frame(int lane = 0) const { return optical_frames[lane == 0 ? 0 : 1]; }
+
     const VibeUserParams &user_params() const { return params.user; }
     const VibeUserParams &smoothed_user_params() const { return smoothed_user; }
     VibeTuningParams &tuning_params() { return params.tuning; }
@@ -1202,6 +1268,11 @@ private:
     VibeQualityMode quality = VibeQualityMode::Standard;
 
     EffectLFO lfo;
+    OpticalMode optical_mode = OpticalMode::ReferenceOptical;
+    OpticalModel reference_optical[2];
+    OpticalFrame optical_frames[2];
+    VibeUserParams optical_user;
+    void process_legacy_optical(float lfol, float lfor, float depth, float sweep_min, float sweep_max, float ldr_curve_scale, float ldr_coeff_alpha);
 
     float lamp_state_l = 0.0f, lamp_state_r = 0.0f;
     float lamp_attack, lamp_release;
@@ -1857,6 +1928,21 @@ void Vibe::init_vibes() {
         min_stage_res[i] = 0.0f;
 #endif
     }
+    for (int lane = 0; lane < 2; ++lane) {
+        OpticalCalibration c;
+        c.lampAttack = params.tuning.lamp_attack_sec * 2.4f;
+        c.lampRelease = params.tuning.lamp_release_sec * 1.75f;
+        c.minResistance = params.tuning.ldr_min_ohms;
+        c.maxResistance = params.tuning.ldr_max_ohms;
+        c.ldrCurve = 1.2f * clampf(params.tuning.ldr_curve / 7.6009f, 0.5f, 2.0f);
+        c.tolerance = 0; // stage mismatch already contains seeded fixed tolerance.
+        for (int cell = 0; cell < 4; ++cell) c.cellScale[cell] = stage[lane*4+cell].ldr_mismatch;
+        reference_optical[lane].prepare(sample_rate_hz);
+        reference_optical[lane].configure(c, rng_seed);
+        reference_optical[lane].set_lag(params.user.lamp_lag);
+        reference_optical[lane].reset();
+        optical_frames[lane] = reference_optical[lane].frame();
+    }
     // Prime both engines so debug/desktop code can flip legacy_saturation while
     // modulation is frozen without leaving the inactive coefficient set at zero.
     modulate_allpass(mod_res_l, mod_res_r);
@@ -1874,6 +1960,11 @@ void Vibe::set_filter_coefs(fparams &target, float n0, float n1, float d1) {
 }
 
 void Vibe::reset_audio_state(bool reset_lfo) {
+    optical_user = params.user;
+    for (int lane = 0; lane < 2; ++lane) {
+        reference_optical[lane].reset();
+        optical_frames[lane] = reference_optical[lane].frame();
+    }
     lamp_state_l = 0.0f;
     lamp_state_r = 0.0f;
     lamp_memory_l = 0.0f;
@@ -1946,7 +2037,7 @@ void Vibe::modulate_allpass(float res_l, float res_r) {
 #if VIBE_LIMIT_470PF_STAGE
         min_stage_res_val = fmaxf(min_stage_res_val, min_stage_res[i]);
 #endif
-        const float stage_res = clampf(base_res * stage[i].ldr_mismatch,
+        const float stage_res = clampf(optical_mode == OpticalMode::ReferenceOptical ? optical_frames[i/4].resistance[i&3] : base_res * stage[i].ldr_mismatch,
                                        min_stage_res_val,
                                        params.tuning.ldr_max_ohms);
         const float currentRv = 4700.0f + stage_res;
@@ -1968,7 +2059,7 @@ void Vibe::modulate_legacy_network(float res_l, float res_r) {
 #if VIBE_LIMIT_470PF_STAGE
         min_stage_res_val = fmaxf(min_stage_res_val, min_stage_res[i]);
 #endif
-        const float stage_res = clampf(base_res * stage[i].ldr_mismatch,
+        const float stage_res = clampf(optical_mode == OpticalMode::ReferenceOptical ? optical_frames[i/4].resistance[i&3] : base_res * stage[i].ldr_mismatch,
                                        min_stage_res_val,
                                        params.tuning.ldr_max_ohms);
         const float currentRv = 4700.0f + stage_res;
@@ -2118,6 +2209,7 @@ void Vibe::out(float *smpsl, float *smpsr, int frames) {
     sat_asym_ramp.begin(prev.sat_asymmetry, smoothed_user.sat_asymmetry, frames);
     sat_trim_ramp.begin(prev.sat_out_trim, smoothed_user.sat_out_trim, frames);
 
+    const float optical_control_alpha = -expm1f(-2.0f * kPi * clampf(params.tuning.control_smoothing_hz, 1.0f, 100.0f) * inv_sample_rate);
     const float drift_alpha = 1.0f - expf(-2.0f * kPi * clampf(smoothed_user.drift_rate_hz, 0.005f, 0.5f) * inv_sample_rate);
     const float profile_smooth_scale = (params.profile == VibeProfile::Modern) ? 1.12f : 0.92f;
     const float smooth_hz = (4.0f + 120.0f * clampf(params.tuning.lfo_shape_smoothing, 0.01f, 1.0f)) * profile_smooth_scale;
@@ -2162,55 +2254,39 @@ void Vibe::out(float *smpsl, float *smpsr, int frames) {
 
         float lfol = 0.0f, lfor = 0.0f;
         // Optional drift embellishment stays in the LFO call to preserve RNG/order.
-        lfo.processSample(&lfol, &lfor, smoothed_user, params.tuning, params.lfo_shape, params.profile, drift_alpha, lfo_smoothing, inv_sample_rate);
+        const bool reference = optical_mode == OpticalMode::ReferenceOptical;
+        if (reference) {
+            const float a = optical_control_alpha;
+            optical_user.depth += a * (params.user.depth - optical_user.depth);
+            optical_user.lfo_rate_hz += a * (params.user.lfo_rate_hz - optical_user.lfo_rate_hz);
+            optical_user.lamp_lag += a * (params.user.lamp_lag - optical_user.lamp_lag);
+            optical_user.sweep_min += a * (params.user.sweep_min - optical_user.sweep_min);
+            optical_user.sweep_max += a * (params.user.sweep_max - optical_user.sweep_max);
+            optical_user.stereo_width += a * (params.user.stereo_width - optical_user.stereo_width);
+            optical_user.drift_amount += a * (params.user.drift_amount - optical_user.drift_amount);
+            optical_user.drift_rate_hz += a * (params.user.drift_rate_hz - optical_user.drift_rate_hz);
+            optical_user.tempo_sync = params.user.tempo_sync;
+            optical_user.tempo_bpm = params.user.tempo_bpm;
+            optical_user.tempo_division_beats = params.user.tempo_division_beats;
+            if ((sample_index % 32u) == 0u) {
+                reference_optical[0].set_lag(optical_user.lamp_lag);
+                reference_optical[1].set_lag(optical_user.lamp_lag);
+            }
+        }
+        lfo.processSample(&lfol, &lfor, reference ? optical_user : smoothed_user, params.tuning, params.lfo_shape, params.profile, drift_alpha, lfo_smoothing, inv_sample_rate, reference);
 
         const float depth = depth_ramp.tick();
         const float sweep_min = sweep_min_ramp.tick();
         const float sweep_max = sweep_max_ramp.tick();
-        const float sweep_span = clampf(sweep_max - sweep_min, 0.0f, 1.0f);
-        const float target_l = sweep_min + depth * lfol * sweep_span;
-        const float target_r = sweep_min + depth * lfor * sweep_span;
-        const float hyst = clampf(params.tuning.lamp_hysteresis, 0.0f, 0.20f);
-        const float profile_mem_scale = (params.profile == VibeProfile::Modern) ? 0.86f : 1.14f;
-        const float mem_base = clampf((0.08f + 7.0f * hyst) * profile_mem_scale, 0.02f, 0.75f);
-
-        const float mem_a_up_l = mem_base;
-        const float mem_a_dn_l = mem_base * 0.58f;
-        const float mem_a_up_r = mem_base;
-        const float mem_a_dn_r = mem_base * 0.58f;
-        lamp_memory_l += ((target_l > lamp_memory_l) ? mem_a_up_l : mem_a_dn_l) * (target_l - lamp_memory_l);
-        lamp_memory_r += ((target_r > lamp_memory_r) ? mem_a_up_r : mem_a_dn_r) * (target_r - lamp_memory_r);
-        // Invariant: lamp memory emulation stays physical [0..1] before non-linear shaping.
-        lamp_memory_l = clampf(lamp_memory_l, 0.0f, 1.0f);
-        lamp_memory_r = clampf(lamp_memory_r, 0.0f, 1.0f);
-
-        const float target_l_h = 0.5f + 0.5f * tanhf((lamp_memory_l - 0.5f) * 2.3f);
-        const float target_r_h = 0.5f + 0.5f * tanhf((lamp_memory_r - 0.5f) * 2.3f);
-
-        const float stage_slew_l = channel_lamp_slew_l;
-        const float stage_slew_r = channel_lamp_slew_r;
-        const float atk_l = clampf(lamp_attack * stage_slew_l, 0.0001f, 1.0f);
-        const float rel_l = clampf(lamp_release / stage_slew_l, 0.0001f, 1.0f);
-        const float atk_r = clampf(lamp_attack * stage_slew_r, 0.0001f, 1.0f);
-        const float rel_r = clampf(lamp_release / stage_slew_r, 0.0001f, 1.0f);
-        lamp_state_l += ((target_l_h > lamp_state_l) ? atk_l : rel_l) * (target_l_h - lamp_state_l);
-        lamp_state_r += ((target_r_h > lamp_state_r) ? atk_r : rel_r) * (target_r_h - lamp_state_r);
-        // Invariant: optical lamp state clamp avoids invalid LDR exponent input.
-        lamp_state_l = clampf(lamp_state_l, 0.0f, 1.0f);
-        lamp_state_r = clampf(lamp_state_r, 0.0f, 1.0f);
-
-        const float bright_l = lamp_state_l * sqrtf(lamp_state_l);
-        const float bright_r = lamp_state_r * sqrtf(lamp_state_r);
-        const float res_l = ldr_resistance_from_brightness(bright_l, params.tuning, ldr_curve_scale);
-        const float res_r = ldr_resistance_from_brightness(bright_r, params.tuning, ldr_curve_scale);
-#if VIBE_DIAG_FREEZE_MODULATION
-        (void)res_l;
-        (void)res_r;
-#else
-        mod_res_l += ldr_coeff_alpha * (res_l - mod_res_l);
-        mod_res_r += ldr_coeff_alpha * (res_r - mod_res_r);
-        mod_res_l = clampf(mod_res_l, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
-        mod_res_r = clampf(mod_res_r, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
+        if (optical_mode == OpticalMode::LegacyOptical) {
+            process_legacy_optical(lfol, lfor, depth, sweep_min, sweep_max, ldr_curve_scale, ldr_coeff_alpha);
+        } else {
+            optical_frames[0] = reference_optical[0].process_sample(lfo.phase_left(), lfol, optical_user.depth, optical_user.sweep_min, optical_user.sweep_max);
+            optical_frames[1] = reference_optical[1].process_sample(lfo.phase_right(), lfor, optical_user.depth, optical_user.sweep_min, optical_user.sweep_max);
+            lamp_state_l = reference_optical[0].temperature();
+            lamp_state_r = reference_optical[1].temperature();
+        }
+#if !VIBE_DIAG_FREEZE_MODULATION
 #if VIBE_COEFF_UPDATE_PER_SAMPLE
         modulate(mod_res_l, mod_res_r);
 #else
@@ -2364,4 +2440,60 @@ void Vibe::out(float *smpsl, float *smpsr, int frames) {
         efxoutl[i] = final_gain * lpanning * (mixed_l + noise_l);
         efxoutr[i] = final_gain * rpanning * (mixed_r + noise_r);
     }
+}
+
+// Exact M0/M1 optical arithmetic retained for offline regression.
+void Vibe::process_legacy_optical(float lfol, float lfor, float depth, float sweep_min, float sweep_max, float ldr_curve_scale, float ldr_coeff_alpha) {
+        const float sweep_span = clampf(sweep_max - sweep_min, 0.0f, 1.0f);
+        const float target_l = sweep_min + depth * lfol * sweep_span;
+        const float target_r = sweep_min + depth * lfor * sweep_span;
+        const float hyst = clampf(params.tuning.lamp_hysteresis, 0.0f, 0.20f);
+        const float profile_mem_scale = (params.profile == VibeProfile::Modern) ? 0.86f : 1.14f;
+        const float mem_base = clampf((0.08f + 7.0f * hyst) * profile_mem_scale, 0.02f, 0.75f);
+
+        const float mem_a_up_l = mem_base;
+        const float mem_a_dn_l = mem_base * 0.58f;
+        const float mem_a_up_r = mem_base;
+        const float mem_a_dn_r = mem_base * 0.58f;
+        lamp_memory_l += ((target_l > lamp_memory_l) ? mem_a_up_l : mem_a_dn_l) * (target_l - lamp_memory_l);
+        lamp_memory_r += ((target_r > lamp_memory_r) ? mem_a_up_r : mem_a_dn_r) * (target_r - lamp_memory_r);
+        // Invariant: lamp memory emulation stays physical [0..1] before non-linear shaping.
+        lamp_memory_l = clampf(lamp_memory_l, 0.0f, 1.0f);
+        lamp_memory_r = clampf(lamp_memory_r, 0.0f, 1.0f);
+
+        const float target_l_h = 0.5f + 0.5f * tanhf((lamp_memory_l - 0.5f) * 2.3f);
+        const float target_r_h = 0.5f + 0.5f * tanhf((lamp_memory_r - 0.5f) * 2.3f);
+
+        const float stage_slew_l = channel_lamp_slew_l;
+        const float stage_slew_r = channel_lamp_slew_r;
+        const float atk_l = clampf(lamp_attack * stage_slew_l, 0.0001f, 1.0f);
+        const float rel_l = clampf(lamp_release / stage_slew_l, 0.0001f, 1.0f);
+        const float atk_r = clampf(lamp_attack * stage_slew_r, 0.0001f, 1.0f);
+        const float rel_r = clampf(lamp_release / stage_slew_r, 0.0001f, 1.0f);
+        lamp_state_l += ((target_l_h > lamp_state_l) ? atk_l : rel_l) * (target_l_h - lamp_state_l);
+        lamp_state_r += ((target_r_h > lamp_state_r) ? atk_r : rel_r) * (target_r_h - lamp_state_r);
+        // Invariant: optical lamp state clamp avoids invalid LDR exponent input.
+        lamp_state_l = clampf(lamp_state_l, 0.0f, 1.0f);
+        lamp_state_r = clampf(lamp_state_r, 0.0f, 1.0f);
+
+        const float bright_l = lamp_state_l * sqrtf(lamp_state_l);
+        const float bright_r = lamp_state_r * sqrtf(lamp_state_r);
+        const float res_l = ldr_resistance_from_brightness(bright_l, params.tuning, ldr_curve_scale);
+        const float res_r = ldr_resistance_from_brightness(bright_r, params.tuning, ldr_curve_scale);
+        (void)res_l; (void)res_r; (void)ldr_coeff_alpha;
+        #if !VIBE_DIAG_FREEZE_MODULATION
+        mod_res_l += ldr_coeff_alpha * (res_l - mod_res_l);
+        mod_res_r += ldr_coeff_alpha * (res_r - mod_res_r);
+        mod_res_l = clampf(mod_res_l, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
+        mod_res_r = clampf(mod_res_r, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
+        #endif
+        for (int lane = 0; lane < 2; ++lane) {
+            auto& f = optical_frames[lane];
+            f.phase = lane ? lfo.phase_right() : lfo.phase_left();
+            f.drive = lane ? target_r : target_l;
+            f.brightness = lane ? bright_r : bright_l;
+            float base = lane ? mod_res_r : mod_res_l;
+            for (int cell = 0; cell < 4; ++cell)
+                f.resistance[cell] = clampf(base * stage[lane*4+cell].ldr_mismatch, params.tuning.ldr_min_ohms, params.tuning.ldr_max_ohms);
+        }
 }

@@ -152,3 +152,49 @@ explicitamente (`--quality high` para a baseline M0/M1). Os aliases antigos de
 calibração continuam disponíveis com seus valores anteriores, distintos do banco
 musical do VST. O harness de métricas usa 44.1 kHz; os smoke tests JUCE cobrem
 44.1/48/96/192 kHz, mono/stereo e blocos arbitrários.
+
+## M2: análise óptica e comparação controlada
+
+O core usa ReferenceOptical por padrão. `dsp_validate --optical legacy` seleciona
+somente a óptica M0/M1, mantendo o mesmo DSP de áudio. Esse seletor é diferente
+do antigo `--engine legacy` da CLI. IDs públicos e modos Quality permanecem iguais.
+
+```powershell
+build/desktop_tools/optical_analyze.exe --out-dir build/m2/optics
+python desktop_tools/scripts/validate_optical.py build/m2/optics/summary.csv
+build/desktop_tools/optical_analyze.exe --cpu-only --out-dir build/m2/cpu
+
+$factoryArgs = 0..11 | ForEach-Object { '--preset'; "factory_$_" }
+build/desktop_tools/dsp_validate.exe --out-dir build/m2/legacy --quality high --optical legacy @factoryArgs
+build/desktop_tools/dsp_validate.exe --out-dir build/m2/reference --quality high --optical reference --factory-levels baseline @factoryArgs
+python desktop_tools/scripts/compare_optical.py build/m2/legacy build/m2/reference build/m2/comparison
+```
+
+`optical_analyze` exporta 0.2/0.5/1/2/4/7 Hz × Depth 0.15/0.35/0.60/0.85/1.00
+para ambos os modelos: fase, drive, brilho e quatro resistências. São quatro
+ciclos completos após estabilização, observados a cada 32 amostras. O modelo
+processa todas as amostras. `--sample-rate` permite repetir em outra taxa.
+`*_averaged.csv` contém médias em 256 bins de fase; `summary.csv` contém extremos,
+médias, média geométrica, razão de modulação, atraso e estabilidade por ciclo.
+Cell=-1 representa a lâmpada; 0..3 representam os LDRs. Tempos de subida/descida
+10–90% são medidas da trajetória periódica, diferentes das constantes térmicas.
+`configuration.txt` registra controles, taxa, seed e tamanho dos componentes.
+
+`cpu.csv` mede o passo óptico e o core completo nas três Qualities. Tempos máximos
+incluem escalonamento do sistema desktop e não garantem deadlines no RP2350.
+
+Legacy com factory presets mantém os ganhos originais. Reference com
+`--factory-levels baseline` usa esses mesmos ganhos para isolar a alteração
+óptica. Reference sem essa opção usa os cinco ajustes M2 do banco atual.
+`compare_optical.py` preserva eventos de notch separadamente quando suas
+quantidades mudam. `compare_regression.py` continua exigindo igualdade estrutural
+para reproduzir a baseline M0/M1.
+
+Com matplotlib instalado, gere um gráfico estático:
+
+```powershell
+python desktop_tools/scripts/plot_optical.py build/m2/optics build/m2/trajectories.png
+```
+
+Arquitetura, equações, resultados e limitações:
+[docs/m2-optical-reference.md](../docs/m2-optical-reference.md).

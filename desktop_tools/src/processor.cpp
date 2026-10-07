@@ -186,7 +186,9 @@ struct DesktopUnivibeProcessor::Impl {
             improved->set_param(VibeParamId::StereoWidth, f.width);
             improved->set_param(VibeParamId::ToneTilt, f.tone);
             improved->set_param(VibeParamId::NoiseAmount, f.noise);
-            improved->set_param(VibeParamId::OutputGain, f.outputGain);
+            // Frozen M0/M1 level trims keep Legacy comparisons reproducible.
+            static constexpr float legacyOutputGain[12] = {1.07f,1.07f,1.03f,1.20f,0.90f,1.31f,1.00f,0.74f,0.88f,0.74f,1.01f,1.04f};
+            improved->set_param(VibeParamId::OutputGain, (p.legacy_optical || p.original_factory_levels) ? legacyOutputGain[p.factory_preset] : f.outputGain);
             improved->set_param(VibeParamId::SweepMin, f.sweepMin);
             improved->set_param(VibeParamId::SweepMax, f.sweepMax);
             improved->set_param(VibeParamId::DriftAmount, f.driftAmount);
@@ -197,6 +199,8 @@ struct DesktopUnivibeProcessor::Impl {
             improved->set_param(VibeParamId::LampLag, f.lampLag);
         }
 
+
+        improved->set_optical_mode(p.legacy_optical ? OpticalMode::LegacyOptical : OpticalMode::ReferenceOptical);
 
         if (p.engine_mode == UnivibeParams::EngineMode::legacy || p.compare_mode == UnivibeParams::CompareMode::difference) {
             legacy = new Vibe(diff_l.data(), diff_r.data());

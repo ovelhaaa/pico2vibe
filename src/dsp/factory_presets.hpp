@@ -24,6 +24,7 @@ struct FactoryPreset {
     float lampLag;
 };
 
+// M2: five level trims only; see docs/m2-optical-reference.md.
 constexpr FactoryPreset kFactoryPresets[] = {
     // name, voicing, depth, feedback, mix, rate, drive, width, tone, noise,
     // output, sweep min/max, drift amount/rate, HPF, asymmetry, saturation trim, lamp lag
@@ -32,10 +33,10 @@ constexpr FactoryPreset kFactoryPresets[] = {
       1.07f, 0.56f, 0.96f, 0.014f, 0.070f, 24.0f, 0.045f, 0.94f, 1.10f },
     { "Shin-ei Dark", VibeVoicing::VintageUniVibeChorus,
       0.82f, 0.34f, 0.52f, 0.88f, 1.82f, 0.42f, -0.24f, 0.006f,
-      1.07f, 0.52f, 0.95f, 0.019f, 0.060f, 28.0f, 0.065f, 0.90f, 1.18f },
+      1.15f, 0.52f, 0.95f, 0.019f, 0.060f, 28.0f, 0.065f, 0.90f, 1.18f },
     { "Deja Lead", VibeVoicing::TrowerLead,
       0.76f, 0.34f, 0.48f, 1.32f, 2.15f, 0.42f, -0.08f, 0.000f,
-      1.03f, 0.54f, 0.97f, 0.010f, 0.080f, 32.0f, 0.085f, 0.89f, 0.94f },
+      1.09f, 0.54f, 0.97f, 0.010f, 0.080f, 32.0f, 0.085f, 0.89f, 0.94f },
     { "Voodoo Wide", VibeVoicing::WideStereoDream,
       0.64f, 0.18f, 0.54f, 0.64f, 1.28f, 0.96f, 0.03f, 0.000f,
       1.20f, 0.58f, 0.93f, 0.008f, 0.050f, 20.0f, 0.020f, 0.98f, 0.90f },
@@ -47,7 +48,7 @@ constexpr FactoryPreset kFactoryPresets[] = {
       1.31f, 0.58f, 0.92f, 0.012f, 0.065f, 24.0f, 0.035f, 0.95f, 1.12f },
     { "Hendrix Deep", VibeVoicing::DeepHendrixSwirl,
       0.88f, 0.48f, 0.57f, 0.72f, 2.00f, 0.52f, -0.20f, 0.004f,
-      1.00f, 0.48f, 1.00f, 0.022f, 0.045f, 28.0f, 0.075f, 0.86f, 1.32f },
+      1.34f, 0.48f, 1.00f, 0.022f, 0.045f, 28.0f, 0.075f, 0.86f, 1.32f },
     { "Gentle Clean", VibeVoicing::GentleCleanVibe,
       0.40f, 0.07f, 0.28f, 0.55f, 1.00f, 0.38f, -0.02f, 0.000f,
       0.74f, 0.62f, 0.86f, 0.004f, 0.070f, 18.0f, 0.000f, 1.00f, 0.85f },
@@ -59,10 +60,10 @@ constexpr FactoryPreset kFactoryPresets[] = {
       0.74f, 0.62f, 0.90f, 0.002f, 0.060f, 8.0f, 0.000f, 0.98f, 0.90f },
     { "Lamp Drift", VibeVoicing::LoFiLampDrift,
       0.68f, 0.25f, 0.50f, 0.58f, 1.85f, 0.48f, -0.16f, 0.012f,
-      1.01f, 0.55f, 0.94f, 0.030f, 0.035f, 24.0f, 0.110f, 0.88f, 1.45f },
+      1.07f, 0.55f, 0.94f, 0.030f, 0.035f, 24.0f, 0.110f, 0.88f, 1.45f },
     { "Psychedelic Slow", VibeVoicing::PsychedelicSlowSweep,
       0.88f, 0.50f, 0.58f, 0.16f, 1.65f, 0.58f, -0.22f, 0.004f,
-      1.04f, 0.46f, 0.99f, 0.016f, 0.025f, 28.0f, 0.060f, 0.86f, 1.60f }
+      1.20f, 0.46f, 0.99f, 0.016f, 0.025f, 28.0f, 0.060f, 0.86f, 1.60f }
 };
 
 } // namespace pico2vibe
