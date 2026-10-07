@@ -4,8 +4,9 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT="$ROOT/web/dist"
 mkdir -p "$OUT"
 
-emcc "$ROOT/web/wasm/vibe_wasm.cpp" \
+em++ "$ROOT/web/wasm/vibe_wasm.cpp" \
   -I"$ROOT/src" \
+  -std=c++17 \
   -O3 \
   -s MODULARIZE=1 \
   -s EXPORT_ES6=1 \

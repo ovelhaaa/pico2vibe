@@ -39,6 +39,13 @@ jobs:
       - name: Checkout pico2vibe
         uses: actions/checkout@v4
 
+      - name: Initialize validation log
+        shell: pwsh
+        run: |
+          $logDir = Join-Path $env:GITHUB_WORKSPACE "$env:BUILD_DIR/pluginval"
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+          "Validation not yet run" | Set-Content -LiteralPath (Join-Path $logDir "pluginval.log")
+
       - name: Checkout JUCE
         uses: actions/checkout@v4
         with:
@@ -98,21 +105,24 @@ jobs:
           "PLUGINVAL_EXE=$executable" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Validate VST3 with pluginval
+        id: validation
         shell: pwsh
         run: |
           $bundle = Join-Path $env:GITHUB_WORKSPACE "$env:VST3_DIR/pico2vibe.vst3"
           $logDir = Join-Path $env:GITHUB_WORKSPACE "$env:BUILD_DIR/pluginval"
           New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
+          # Own the log: pluginval's optional file output is not reliable on Windows.
+          $log = Join-Path $logDir "pluginval.log"
+          "Starting pluginval strictness 8" | Set-Content -LiteralPath $log
           & $env:PLUGINVAL_EXE --validate-in-process --validate $bundle `
             --strictness-level 8 --timeout-ms 120000 --skip-gui-tests `
-            --random-seed 0x7f78bbf `
-            --output-dir $logDir --output-filename pluginval.log
-
-          $log = Join-Path $logDir "pluginval.log"
-          Get-Content -LiteralPath $log
-          if ($LASTEXITCODE -ne 0 -or -not (Select-String -LiteralPath $log -Pattern '^SUCCESS$' -Quiet)) {
-            throw "pluginval validation failed"
+            --random-seed 0x7f78bbf 2>&1 | Tee-Object -FilePath $log -Append
+          $validationExitCode = $LASTEXITCODE
+          "pluginval exit code: $validationExitCode" | Add-Content -LiteralPath $log
+          if ($validationExitCode -ne 0 -or
+              -not (Select-String -LiteralPath $log -Pattern '^\s*SUCCESS\s*$' -Quiet)) {
+            throw "pluginval validation failed (exit code $validationExitCode); see $log"
           }
 
       - name: Upload pluginval log
@@ -125,6 +135,7 @@ jobs:
           retention-days: 14
 
       - name: Upload VST3 artifact
+        if: ${{ always() && steps.validation.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: pico2vibe-vst3-windows-x64

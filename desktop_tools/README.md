@@ -8,13 +8,10 @@ Esta pasta adiciona um fluxo de teste offline no PC sem mexer no firmware do Pic
 - Permitir testar em arquivo completo (WAV/MP3) antes de gravar na placa.
 - Validar mudanças DSP com medições objetivas (WAV + CSV), incluindo A/B simples.
 
-## Como a paridade com o Pico funciona
+## Como a paridade funciona
 
-No build da CLI, o script `scripts/extract_dsp.py` extrai o trecho DSP direto de `../univibe_rp2350_dma.cpp` e gera:
-
-- `build/desktop_tools/generated/vibe_core.generated.hpp`
-
-Sempre que o DSP do Pico mudar, a CLI recompila usando esse trecho atualizado.
+As ferramentas incluem diretamente `src/dsp/vibe_core.hpp`, o mesmo core do
+firmware, VST e WASM. Nenhum DSP é extraído ou duplicado.
 
 ## Compilar CLI
 
@@ -146,3 +143,12 @@ A GUI chama a CLI e permite ouvir a saída. Se `ffplay` estiver no PATH, ele é 
 
 - Para equivalência com o firmware atual, a validação roda em 44.1 kHz.
 - Modo `chorus` e `vibrato` estão suportados.
+
+## Baseline da versão 0.9.0
+
+`dsp_validate --preset factory_0` até `--preset factory_11` usa a mesma tabela
+musical do plugin, com seed 1 e condicionamento final habilitado. Escolha Quality
+explicitamente (`--quality high` para a baseline M0/M1). Os aliases antigos de
+calibração continuam disponíveis com seus valores anteriores, distintos do banco
+musical do VST. O harness de métricas usa 44.1 kHz; os smoke tests JUCE cobrem
+44.1/48/96/192 kHz, mono/stereo e blocos arbitrários.

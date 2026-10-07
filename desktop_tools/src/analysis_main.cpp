@@ -54,6 +54,7 @@ void usage() {
         << "  --out-dir <pasta>              Pasta de saida (padrao: analysis_out)\n"
         << "  --preset <nome>                Pode repetir. Presets: classic, subtle, deep, vibrato, vintage, hendrix, trower, gentle, stereo, vintage_vibrato, always_on, slow_sweep, rotary, bass_synth, lo_fi, hifi\n"
         << "                                  Aliases de calibracao: classic_univibe, shin_ei_dark, voodoo_wide, deja_vibe\n"
+        << "                                  Plugin bank: factory_0 through factory_11 (seed 1, conditioned output)\n"
         << "  --levels-db <lista>            Ex: -24,-18,-12,-6,0\n"
         << "  --sweep-seconds <seg>          Duracao do sweep (padrao: 8)\n"
         << "  --compare-to <pasta>           Pasta de baseline para gerar diff de summary\n"
@@ -94,7 +95,10 @@ std::vector<float> parse_list(const std::string& csv) {
 
 UnivibeParams preset_params(const std::string& name) {
     UnivibeParams p;
-    if (name == "classic" || name == "classic_univibe") {
+    if (name.rfind("factory_", 0) == 0) {
+        p.factory_preset = std::stoi(name.substr(8));
+        p.output_conditioning = true;
+    } else if (name == "classic" || name == "classic_univibe") {
         p.preset = UnivibeParams::Preset::classic_chorus;
         p.mode_chorus = true;
         p.rate_hz = 0.85f;

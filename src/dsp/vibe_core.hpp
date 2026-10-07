@@ -46,7 +46,7 @@ constexpr float kMaxVibeSampleRateHz = 384000.0f;
 #define VIBE_470PF_MAX_CORNER_HZ 15000.0f
 #endif
 
-// Final output conditioning toggles (keep lightweight, easy to bypass if desired).
+// Embedded build defaults; each safety stage also has an independent runtime switch.
 #ifndef ENABLE_OUTPUT_DC_BLOCKER
 #define ENABLE_OUTPUT_DC_BLOCKER 1
 #endif
@@ -59,6 +59,7 @@ constexpr float kMaxVibeSampleRateHz = 384000.0f;
 #define ENABLE_OUTPUT_SOFT_LIMITER 1
 #endif
 
+// TPDF belongs only to embedded float_to_pcm24(), never floating-point output.
 #ifndef ENABLE_TPDF_DITHER
 #define ENABLE_TPDF_DITHER 1
 #endif
@@ -121,6 +122,7 @@ static inline float tempo_synced_lfo_rate_hz(float manual_hz, float tempo_sync, 
 
 // Keeps low/mid feedback behavior familiar while giving the top of the knob
 // more useful sustain range for audible repeats.
+// Studio creative feedback mapping; distinct from circuit feedback topology.
 static inline float feedback_musical_gain(float knob) {
     const float k = clampf(knob, 0.0f, 0.65f);
     const float normalized = k * (1.0f / 0.65f);
@@ -135,8 +137,18 @@ struct VibeOutputDcBlocker {
     float y1 = 0.0f;
 };
 
+// Studio safety chain, separate from circuit gain and musical output trim.
+struct VibeOutputConditionerConfig {
+    bool dc_blocker = ENABLE_OUTPUT_DC_BLOCKER != 0;
+    bool auto_headroom = ENABLE_OUTPUT_AUTO_HEADROOM != 0;
+    bool soft_limiter = ENABLE_OUTPUT_SOFT_LIMITER != 0;
+};
+
 class VibeOutputConditioner {
 public:
+    // Configure at prepare/reset boundaries; reset histories after changing stages.
+    void configure(VibeOutputConditionerConfig next) { config = next; }
+    VibeOutputConditionerConfig configuration() const { return config; }
     void reset(float sample_rate_hz = kDefaultVibeSampleRateHz, uint32_t seed = 0xC001C0DEu) {
         dc_l = {};
         dc_r = {};
@@ -151,24 +163,24 @@ public:
         float y_l = dc_block_sample(dc_l, in_l);
         float y_r = dc_block_sample(dc_r, in_r);
 
-#if ENABLE_OUTPUT_AUTO_HEADROOM
-        const float abs_y = fmaxf(fabsf(y_l), fabsf(y_r));
-        const float env_attack = 0.14f;
-        const float env_release = 0.003f;
-        env += (abs_y > env ? env_attack : env_release) * (abs_y - env);
-        const float target = (env > 0.92f) ? (0.92f / (env + 1e-12f)) : 1.0f;
-        const float trim_attack = 0.20f;
-        const float trim_release = 0.0015f;
-        trim += (target < trim ? trim_attack : trim_release) * (target - trim);
-        y_l *= trim;
-        y_r *= trim;
-#endif
+        if (config.auto_headroom) {
+            const float abs_y = fmaxf(fabsf(y_l), fabsf(y_r));
+            const float env_attack = 0.14f;
+            const float env_release = 0.003f;
+            env += (abs_y > env ? env_attack : env_release) * (abs_y - env);
+            const float target = (env > 0.92f) ? (0.92f / (env + 1e-12f)) : 1.0f;
+            const float trim_attack = 0.20f;
+            const float trim_release = 0.0015f;
+            trim += (target < trim ? trim_attack : trim_release) * (target - trim);
+            y_l *= trim;
+            y_r *= trim;
+        }
 
-#if ENABLE_OUTPUT_SOFT_LIMITER
-        const float limit_drive = 1.25f;
-        y_l = soft_clip_cubic(y_l * limit_drive) * (1.0f / limit_drive);
-        y_r = soft_clip_cubic(y_r * limit_drive) * (1.0f / limit_drive);
-#endif
+        if (config.soft_limiter) {
+            const float limit_drive = 1.25f;
+            y_l = soft_clip_cubic(y_l * limit_drive) * (1.0f / limit_drive);
+            y_r = soft_clip_cubic(y_r * limit_drive) * (1.0f / limit_drive);
+        }
         *out_l = y_l;
         *out_r = y_r;
     }
@@ -177,17 +189,14 @@ public:
 
 private:
     float dc_block_sample(VibeOutputDcBlocker &s, float x) {
-#if ENABLE_OUTPUT_DC_BLOCKER
+        if (!config.dc_blocker) return x;
         const float y = (x - s.x1) + dc_r_coef * s.y1;
         s.x1 = x;
         s.y1 = y;
         return y;
-#else
-        (void)s;
-        return x;
-#endif
     }
 
+    VibeOutputConditionerConfig config {};
     VibeOutputDcBlocker dc_l;
     VibeOutputDcBlocker dc_r;
     float env = 0.0f;
@@ -1214,6 +1223,7 @@ private:
     uint32_t noise_rng = 0xC0FFEE23u;
     uint32_t processed_sample_count = 0u;
     VibeUserParams smoothed_user;
+    // Studio histories: adaptive gain, wet energy, tone and optional texture.
     float output_trim_smoothed = 1.0f;
     float pre_hpf_x1_l = 0.0f, pre_hpf_y1_l = 0.0f;
     float pre_hpf_x1_r = 0.0f, pre_hpf_y1_r = 0.0f;
@@ -1249,6 +1259,12 @@ private:
     float hp_pre(float x, float hz, float &x1, float &y1);
     float feedback_profile_process(float x, FeedbackProfile profile, VibeProfile vibe_profile, FeedbackMidState &mid_state);
     void set_filter_coefs(fparams &target, float n0, float n1, float d1);
+    // Studio additions; circuit/optical network remains in out() and greybox processing.
+    float studio_output_gain(float input_drive, float feedback, float mix, float auto_level, float output_gain);
+    void studio_process_wet(float &wet_l, float &wet_r, float stereo_width, float mono_compat,
+                            float chorus_stereo_focus, float notch_focus, float classic_stereo_reduction,
+                            float depth, float mix_center, float mix, float wet_env_attack,
+                            float wet_env_release, float auto_level, uint32_t sample_index);
     float tone_tilt_process(float x, float tilt, float &lp);
     float wet_antialias_process(float x, float coeff, float &state);
 };
@@ -1570,6 +1586,9 @@ void Vibe::set_user_params(const VibeUserParams &user) {
     sanitize_user_params(&params.user);
 }
 
+// Standalone callers receive useful model defaults. Wrappers must apply their
+// authoritative user parameters afterwards; this is a character profile, not
+// a host factory program or a second persistent project state.
 void Vibe::set_voicing(VibeVoicing voicing_id) {
     const VibePreset preset = make_vibe_preset(voicing_id);
     params.user = preset.user;
@@ -2009,6 +2028,67 @@ float Vibe::greybox_phase_network_process(float x, int first_stage, float coeff_
     return y;
 }
 
+float Vibe::studio_output_gain(float input_drive, float feedback, float mix, float auto_level, float output_gain) {
+    const float stress = 0.55f * clampf((input_drive - 0.5f) / 5.5f, 0.0f, 1.0f)
+                       + 0.18f * clampf(feedback / 0.70f, 0.0f, 1.0f)
+                       + 0.27f * mix * mix;
+    const float auto_trim = (1.0f / (1.0f + 0.35f * stress)) * (1.0f - params.tuning.gain_comp_depth * (mix - 0.5f));
+    const float target_trim = 1.0f + (auto_trim - 1.0f) * auto_level;
+    output_trim_smoothed += (0.018f + 0.042f * auto_level) * (target_trim - output_trim_smoothed);
+    return output_gain * output_trim_smoothed;
+}
+
+void Vibe::studio_process_wet(float &wet_l, float &wet_r, float stereo_width, float mono_compat,
+                         float chorus_stereo_focus, float notch_focus, float classic_stereo_reduction,
+                         float depth, float mix_center, float mix, float wet_env_attack,
+                         float wet_env_release, float auto_level, uint32_t sample_index) {
+    constexpr float wet_env_floor = 1.0e-4f;
+    constexpr float wet_comp_min = 0.84140f; // -1.5 dB
+    constexpr float wet_comp_max = 1.18850f; // +1.5 dB
+    // Wet-only mid/side focus adds width while keeping wide voices useful in mono.
+    const float wet_mid = 0.5f * (wet_l + wet_r);
+    const float wet_side_raw = 0.5f * (wet_l - wet_r);
+    const float wide_voice = clampf((stereo_width - 0.70f) * (1.0f / 0.55f), 0.0f, 1.0f);
+    const float guard_amount = mono_compat * wide_voice * (0.45f + 0.55f * chorus_stereo_focus);
+    const float guarded_focus = 1.0f - 0.35f * guard_amount;
+    const float side_focus = 1.0f + 0.13f * chorus_stereo_focus * notch_focus * clampf(guarded_focus, 0.55f, 1.0f);
+    const float wet_side_width = clampf(classic_stereo_reduction * side_focus * (1.0f - 0.16f * guard_amount * depth), 0.0f, 1.22f);
+    const float wet_side = wet_side_raw * wet_side_width;
+    const float wet_mid_anchor = 1.0f + depth * ((0.045f * chorus_stereo_focus * (0.55f + 0.45f * mix_center))
+                                                 + (0.035f * mono_compat * wide_voice));
+    wet_l = wet_mid * wet_mid_anchor + wet_side;
+    wet_r = wet_mid * wet_mid_anchor - wet_side;
+
+    // Cheap one-pole wet energy estimator + bounded wet compensation driven by depth.
+    const float wet_energy_l = wet_l * wet_l;
+    const float wet_energy_r = wet_r * wet_r;
+    wet_env_l += ((wet_energy_l > wet_env_l) ? wet_env_attack : wet_env_release) * (wet_energy_l - wet_env_l);
+    wet_env_r += ((wet_energy_r > wet_env_r) ? wet_env_attack : wet_env_release) * (wet_energy_r - wet_env_r);
+    wet_env_l = clampf(wet_env_l, 0.0f, 64.0f);
+    wet_env_r = clampf(wet_env_r, 0.0f, 64.0f);
+
+    const float wet_ref = 0.12f + 0.22f * clampf(depth, 0.0f, 1.0f);
+    const float inv_env_l = wet_ref / fmaxf(wet_env_l, wet_env_floor);
+    const float inv_env_r = wet_ref / fmaxf(wet_env_r, wet_env_floor);
+    const float depth_comp_amt = clampf(depth * (0.55f + 0.45f * mix), 0.0f, 1.0f);
+    if ((sample_index & 0x3u) == 0u) {
+        wet_comp_l_raw_state = clampf(powf(inv_env_l, 0.20f), wet_comp_min, wet_comp_max);
+        wet_comp_r_raw_state = clampf(powf(inv_env_r, 0.20f), wet_comp_min, wet_comp_max);
+    }
+    const float wet_comp_l = 1.0f + (wet_comp_l_raw_state - 1.0f) * depth_comp_amt * auto_level;
+    const float wet_comp_r = 1.0f + (wet_comp_r_raw_state - 1.0f) * depth_comp_amt * auto_level;
+
+    // The measured grey-box cells attenuate more below their moving shelf
+    // than ideal all-passes. Keep vibrato near unity without flattening
+    // that spectral motion or applying a fast, audible level follower.
+    const float vibrato_trim = clampf(1.015f - 0.025f * (1.0f - auto_level) * depth * depth,
+                                      0.98f, 1.015f);
+    const float wet_mode_trim = mode_chorus ? 1.0f : vibrato_trim;
+    wet_l *= wet_comp_l * wet_mode_trim;
+    wet_r *= wet_comp_r * wet_mode_trim;
+
+}
+
 void Vibe::out(float *smpsl, float *smpsr, int frames) {
     frames = (frames < 0) ? 0 : ((frames > PERIOD) ? PERIOD : frames);
     if (frames == 0) return;
@@ -2052,9 +2132,6 @@ void Vibe::out(float *smpsl, float *smpsr, int frames) {
     const float ldr_curve_scale = clampf(params.tuning.ldr_curve, 0.1f, 24.0f) * kInvDefaultLdrCurve;
     const float fb_lim_threshold = 0.78f + 0.06f * (1.0f - auto_level);
     const float fb_lim_floor = 0.30f - 0.08f * (1.0f - auto_level);
-    constexpr float wet_env_floor = 1.0e-4f;
-    constexpr float wet_comp_min = 0.84140f; // -1.5 dB
-    constexpr float wet_comp_max = 1.18850f; // +1.5 dB
     constexpr float dyn_k1 = 1.05f; // input envelope weight
     constexpr float dyn_k2 = 0.92f; // feedback weight
     constexpr float dyn_k3 = 0.36f; // depth weight
@@ -2084,6 +2161,7 @@ void Vibe::out(float *smpsl, float *smpsr, int frames) {
         smoothed_user.sat_out_trim = sat_trim_ramp.tick();
 
         float lfol = 0.0f, lfor = 0.0f;
+        // Optional drift embellishment stays in the LFO call to preserve RNG/order.
         lfo.processSample(&lfol, &lfor, smoothed_user, params.tuning, params.lfo_shape, params.profile, drift_alpha, lfo_smoothing, inv_sample_rate);
 
         const float depth = depth_ramp.tick();
@@ -2161,13 +2239,7 @@ void Vibe::out(float *smpsl, float *smpsr, int frames) {
         const float mix_power_norm = mode_chorus ? (1.0f / sqrtf(fmaxf(0.20f, dry_gain_raw * dry_gain_raw + wet_gain_raw * wet_gain_raw))) : 1.0f;
         const float wet_gain = wet_gain_raw * mix_power_norm;
         const float dry_gain = dry_gain_raw * mix_power_norm;
-        const float stress = 0.55f * clampf((input_drive - 0.5f) / 5.5f, 0.0f, 1.0f)
-                           + 0.18f * clampf(feedback / 0.70f, 0.0f, 1.0f)
-                           + 0.27f * mix * mix;
-        const float auto_trim = (1.0f / (1.0f + 0.35f * stress)) * (1.0f - params.tuning.gain_comp_depth * (mix - 0.5f));
-        const float target_trim = 1.0f + (auto_trim - 1.0f) * auto_level;
-        output_trim_smoothed += (0.018f + 0.042f * auto_level) * (target_trim - output_trim_smoothed);
-        const float final_gain = output_gain * output_trim_smoothed;
+        const float final_gain = studio_output_gain(input_drive, feedback, mix, auto_level, output_gain);
         const float hi_fb = clampf((feedback_knob - 0.42f) * (1.0f / 0.23f), 0.0f, 1.0f);
         const float clarity_boost = hi_fb * (0.70f + 0.30f * (1.0f - mix));
         const float lamp_hot = 0.5f * (lamp_state_l + lamp_state_r);
@@ -2220,6 +2292,7 @@ void Vibe::out(float *smpsl, float *smpsr, int frames) {
         const float wet_core_l = params.legacy_saturation
                                  ? wet_shaped_l
                                  : clampf(wet_shaped_l * wet_makeup, -1.35f, 1.35f);
+        // Studio tone/clarity shaping, retained in lane order for numerical parity.
         const float wet_air_l = tone_tilt_process(wet_core_l, tone_tilt, tone_lp_l);
         float wet_l = wet_air_l + wet_core_blend * wet_core_l;
         wet_l = wet_antialias_process(wet_l, wet_smooth_coeff, wet_smooth_l);
@@ -2264,51 +2337,14 @@ void Vibe::out(float *smpsl, float *smpsr, int frames) {
         float wet_r = wet_air_r + wet_core_blend * wet_core_r;
         wet_r = wet_antialias_process(wet_r, wet_smooth_coeff, wet_smooth_r);
 
-        // Wet-only mid/side focus adds width while keeping wide voices useful in mono.
-        const float wet_mid = 0.5f * (wet_l + wet_r);
-        const float wet_side_raw = 0.5f * (wet_l - wet_r);
-        const float wide_voice = clampf((stereo_width - 0.70f) * (1.0f / 0.55f), 0.0f, 1.0f);
-        const float guard_amount = mono_compat * wide_voice * (0.45f + 0.55f * chorus_stereo_focus);
-        const float guarded_focus = 1.0f - 0.35f * guard_amount;
-        const float side_focus = 1.0f + 0.13f * chorus_stereo_focus * notch_focus * clampf(guarded_focus, 0.55f, 1.0f);
-        const float wet_side_width = clampf(classic_stereo_reduction * side_focus * (1.0f - 0.16f * guard_amount * depth), 0.0f, 1.22f);
-        const float wet_side = wet_side_raw * wet_side_width;
-        const float wet_mid_anchor = 1.0f + depth * ((0.045f * chorus_stereo_focus * (0.55f + 0.45f * mix_center))
-                                                     + (0.035f * mono_compat * wide_voice));
-        wet_l = wet_mid * wet_mid_anchor + wet_side;
-        wet_r = wet_mid * wet_mid_anchor - wet_side;
-
-        // Cheap one-pole wet energy estimator + bounded wet compensation driven by depth.
-        const float wet_energy_l = wet_l * wet_l;
-        const float wet_energy_r = wet_r * wet_r;
-        wet_env_l += ((wet_energy_l > wet_env_l) ? wet_env_attack : wet_env_release) * (wet_energy_l - wet_env_l);
-        wet_env_r += ((wet_energy_r > wet_env_r) ? wet_env_attack : wet_env_release) * (wet_energy_r - wet_env_r);
-        wet_env_l = clampf(wet_env_l, 0.0f, 64.0f);
-        wet_env_r = clampf(wet_env_r, 0.0f, 64.0f);
-
-        const float wet_ref = 0.12f + 0.22f * clampf(depth, 0.0f, 1.0f);
-        const float inv_env_l = wet_ref / fmaxf(wet_env_l, wet_env_floor);
-        const float inv_env_r = wet_ref / fmaxf(wet_env_r, wet_env_floor);
-        const float depth_comp_amt = clampf(depth * (0.55f + 0.45f * mix), 0.0f, 1.0f);
-        if ((sample_index & 0x3u) == 0u) {
-            wet_comp_l_raw_state = clampf(powf(inv_env_l, 0.20f), wet_comp_min, wet_comp_max);
-            wet_comp_r_raw_state = clampf(powf(inv_env_r, 0.20f), wet_comp_min, wet_comp_max);
-        }
-        const float wet_comp_l = 1.0f + (wet_comp_l_raw_state - 1.0f) * depth_comp_amt * auto_level;
-        const float wet_comp_r = 1.0f + (wet_comp_r_raw_state - 1.0f) * depth_comp_amt * auto_level;
-
-        // The measured grey-box cells attenuate more below their moving shelf
-        // than ideal all-passes. Keep vibrato near unity without flattening
-        // that spectral motion or applying a fast, audible level follower.
-        const float vibrato_trim = clampf(1.015f - 0.025f * (1.0f - auto_level) * depth * depth,
-                                          0.98f, 1.015f);
-        const float wet_mode_trim = mode_chorus ? 1.0f : vibrato_trim;
-        wet_l *= wet_comp_l * wet_mode_trim;
-        wet_r *= wet_comp_r * wet_mode_trim;
+        studio_process_wet(wet_l, wet_r, stereo_width, mono_compat, chorus_stereo_focus,
+                           notch_focus, classic_stereo_reduction, depth, mix_center, mix,
+                           wet_env_attack, wet_env_release, auto_level, sample_index);
 
         const float mixed_l = mode_chorus ? (dry_raw_l * dry_gain + wet_l * wet_gain) : wet_l;
         const float mixed_r = mode_chorus ? (dry_raw_r * dry_gain + wet_r * wet_gain) : wet_r;
 
+        // Studio texture: optional colored noise, unrelated to PCM dither.
         float noise_l = 0.0f;
         float noise_r = 0.0f;
         if (noise_gain_base > 1.0e-9f) {

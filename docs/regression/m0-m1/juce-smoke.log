@@ -1,0 +1,31 @@
+Start testing: Oct 06 23:01 Hora oficial do Brasil
+----------------------------------------------------------
+1/1 Testing: juce_plugin_smoke_test
+1/1 Test: juce_plugin_smoke_test
+Command: "C:/progs/pico/pico2vibe/build/m0m1/vst/plugin/juce/Pico2VibePluginTests.exe"
+Directory: C:/progs/pico/pico2vibe/build/m0m1/vst/plugin/juce
+"juce_plugin_smoke_test" start time: Oct 06 23:01 Hora oficial do Brasil
+Output:
+----------------------------------------------------------
+preset 0 Classic Uni-Vibe: rms=0.0328684, peak=0.0794157, mono=0.998462
+preset 1 Shin-ei Dark: rms=0.0328387, peak=0.0953392, mono=0.99691
+preset 2 Deja Lead: rms=0.0327002, peak=0.0962919, mono=0.998207
+preset 3 Voodoo Wide: rms=0.032897, peak=0.0829022, mono=0.93277
+preset 4 Modern Hi-Fi: rms=0.0329444, peak=0.0747579, mono=0.995639
+preset 5 Classic Vibrato: rms=0.0326904, peak=0.079631, mono=0.999076
+preset 6 Hendrix Deep: rms=0.0329501, peak=0.125743, mono=0.973492
+preset 7 Gentle Clean: rms=0.0328631, peak=0.071515, mono=0.999938
+preset 8 Rotary Fast: rms=0.0329603, peak=0.0754722, mono=0.999
+preset 9 Bass Anchor: rms=0.0329035, peak=0.0689104, mono=0.999979
+preset 10 Lamp Drift: rms=0.0326843, peak=0.0898315, mono=0.997582
+preset 11 Psychedelic Slow: rms=0.0327007, peak=0.138874, mono=0.930966
+juce_plugin_smoke_test passed
+<end of output>
+Test time =   1.83 sec
+----------------------------------------------------------
+Test Passed.
+"juce_plugin_smoke_test" end time: Oct 06 23:01 Hora oficial do Brasil
+"juce_plugin_smoke_test" time elapsed: 00:00:01
+----------------------------------------------------------
+
+End testing: Oct 06 23:01 Hora oficial do Brasil

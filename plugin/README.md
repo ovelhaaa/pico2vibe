@@ -1,6 +1,6 @@
 # pico2vibe JUCE/VST3 wrapper
 
-This folder contains the first host-plugin wrapper around the shared DSP core in `src/dsp/vibe_core.hpp`.
+This folder contains the 0.9.0 pre-release host-plugin wrapper around the shared DSP core in `src/dsp/vibe_core.hpp`.
 
 The wrapper is intentionally optional so firmware, desktop tools, and WASM builds do not require JUCE.
 
@@ -42,8 +42,8 @@ program changes reset every sound parameter deterministically, and the editor's
 preset selector follows program changes made by the DAW.
 
 The A/B buttons keep two independent sound snapshots for fast comparison. Both
-slots and the active selection are stored in the project state, while bypass is
-treated as a global control and remains unchanged when switching sides.
+slots and the active selection are stored in the project state, while bypass and Quality are
+treated as global controls and remains unchanged when switching sides.
 
 ## Editor
 
@@ -71,3 +71,7 @@ Hendrix Deep and Psychedelic Slow emphasize pitch and deep optical movement;
 Gentle Clean, Rotary Fast, Bass Anchor and Lamp Drift cover utility and texture.
 Each program defines the complete sound state, including sweep range, lamp lag,
 drift, saturation trim, pre-HPF and output gain.
+
+Factory recall preserves bypass and Quality; project restore restores both.
+Quality edits do not select Custom. Factory sound values are shared with desktop
+analysis in `src/dsp/factory_presets.hpp`; plugin IDs and program order are stable.

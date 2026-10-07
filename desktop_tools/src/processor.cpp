@@ -10,6 +10,7 @@
 #define private public
 #include "dsp/vibe_core.hpp"
 #undef private
+#include "dsp/factory_presets.hpp"
 
 namespace {
 
@@ -172,6 +173,30 @@ struct DesktopUnivibeProcessor::Impl {
         improved->set_param(VibeParamId::SatAsymmetry, p.sat_asymmetry);
         improved->set_param(VibeParamId::SatOutTrim, p.sat_out_trim);
         improved->mode_chorus = p.mode_chorus;
+        if (p.factory_preset >= 0) {
+            if (p.factory_preset >= static_cast<int>(std::size(pico2vibe::kFactoryPresets)))
+                throw std::runtime_error("Invalid factory preset index");
+            const auto& f = pico2vibe::kFactoryPresets[p.factory_preset];
+            improved->set_voicing(f.voicing);
+            improved->set_param(VibeParamId::Depth, f.depth);
+            improved->set_param(VibeParamId::Feedback, f.feedback);
+            improved->set_param(VibeParamId::Mix, f.mix);
+            improved->set_param(VibeParamId::LfoRateHz, f.rateHz);
+            improved->set_param(VibeParamId::InputDrive, f.drive);
+            improved->set_param(VibeParamId::StereoWidth, f.width);
+            improved->set_param(VibeParamId::ToneTilt, f.tone);
+            improved->set_param(VibeParamId::NoiseAmount, f.noise);
+            improved->set_param(VibeParamId::OutputGain, f.outputGain);
+            improved->set_param(VibeParamId::SweepMin, f.sweepMin);
+            improved->set_param(VibeParamId::SweepMax, f.sweepMax);
+            improved->set_param(VibeParamId::DriftAmount, f.driftAmount);
+            improved->set_param(VibeParamId::DriftRateHz, f.driftRateHz);
+            improved->set_param(VibeParamId::PreHpfHz, f.preHpfHz);
+            improved->set_param(VibeParamId::SatAsymmetry, f.satAsymmetry);
+            improved->set_param(VibeParamId::SatOutTrim, f.satOutTrim);
+            improved->set_param(VibeParamId::LampLag, f.lampLag);
+        }
+
 
         if (p.engine_mode == UnivibeParams::EngineMode::legacy || p.compare_mode == UnivibeParams::CompareMode::difference) {
             legacy = new Vibe(diff_l.data(), diff_r.data());

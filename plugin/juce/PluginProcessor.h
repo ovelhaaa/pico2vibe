@@ -76,7 +76,7 @@ private:
     void parameterChanged(const juce::String& parameterID, float newValue) override;
     juce::ValueTree createSoundState();
     juce::MemoryBlock serializeSoundState();
-    bool restoreSoundState(const juce::ValueTree& state, bool preserveBypass);
+    bool restoreSoundState(const juce::ValueTree& state, bool preserveGlobalControls);
 
     std::unique_ptr<DspState> dsp;
     std::atomic<float> outputMeterLeft { 0.0f };

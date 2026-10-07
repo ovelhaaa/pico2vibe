@@ -1,0 +1,128 @@
+Start testing: Oct 06 22:59 Hora oficial do Brasil
+----------------------------------------------------------
+1/7 Testing: silence_invariant_active
+1/7 Test: silence_invariant_active
+Command: "C:/progs/pico/pico2vibe/build/desktop_tools/silence_invariant_active.exe"
+Directory: C:/progs/pico/pico2vibe/build/desktop_tools
+"silence_invariant_active" start time: Oct 06 22:59 Hora oficial do Brasil
+Output:
+----------------------------------------------------------
+L peak=0 rms=0 non_zero=0
+R peak=0 rms=0 non_zero=0
+<end of output>
+Test time =   0.35 sec
+----------------------------------------------------------
+Test Passed.
+"silence_invariant_active" end time: Oct 06 22:59 Hora oficial do Brasil
+"silence_invariant_active" time elapsed: 00:00:00
+----------------------------------------------------------
+
+2/7 Testing: silence_invariant_feedback_off
+2/7 Test: silence_invariant_feedback_off
+Command: "C:/progs/pico/pico2vibe/build/desktop_tools/silence_invariant_feedback_off.exe"
+Directory: C:/progs/pico/pico2vibe/build/desktop_tools
+"silence_invariant_feedback_off" start time: Oct 06 22:59 Hora oficial do Brasil
+Output:
+----------------------------------------------------------
+L peak=0 rms=0 non_zero=0
+R peak=0 rms=0 non_zero=0
+<end of output>
+Test time =   0.35 sec
+----------------------------------------------------------
+Test Passed.
+"silence_invariant_feedback_off" end time: Oct 06 22:59 Hora oficial do Brasil
+"silence_invariant_feedback_off" time elapsed: 00:00:00
+----------------------------------------------------------
+
+3/7 Testing: silence_invariant_modulation_frozen
+3/7 Test: silence_invariant_modulation_frozen
+Command: "C:/progs/pico/pico2vibe/build/desktop_tools/silence_invariant_modulation_frozen.exe"
+Directory: C:/progs/pico/pico2vibe/build/desktop_tools
+"silence_invariant_modulation_frozen" start time: Oct 06 22:59 Hora oficial do Brasil
+Output:
+----------------------------------------------------------
+L peak=0 rms=0 non_zero=0
+R peak=0 rms=0 non_zero=0
+<end of output>
+Test time =   0.28 sec
+----------------------------------------------------------
+Test Passed.
+"silence_invariant_modulation_frozen" end time: Oct 06 22:59 Hora oficial do Brasil
+"silence_invariant_modulation_frozen" time elapsed: 00:00:00
+----------------------------------------------------------
+
+4/7 Testing: phase_notch_test
+4/7 Test: phase_notch_test
+Command: "C:/progs/pico/pico2vibe/build/desktop_tools/phase_notch_test.exe"
+Directory: C:/progs/pico/pico2vibe/build/desktop_tools
+"phase_notch_test" start time: Oct 06 22:59 Hora oficial do Brasil
+Output:
+----------------------------------------------------------
+freq_hz=80 gain_db=-1.53245
+freq_hz=140 gain_db=-13.2301
+freq_hz=220 gain_db=-9.85918
+freq_hz=360 gain_db=-1.993
+freq_hz=560 gain_db=0.742965
+freq_hz=820 gain_db=1.84597
+freq_hz=1200 gain_db=2.33679
+freq_hz=1800 gain_db=2.46052
+freq_hz=2700 gain_db=2.27008
+freq_hz=3900 gain_db=1.8246
+min_gain_db=-13.2301 max_gain_db=2.46052 spread_db=15.6906
+<end of output>
+Test time =   0.45 sec
+----------------------------------------------------------
+Test Passed.
+"phase_notch_test" end time: Oct 06 22:59 Hora oficial do Brasil
+"phase_notch_test" time elapsed: 00:00:00
+----------------------------------------------------------
+
+5/7 Testing: block_size_invariance_test
+5/7 Test: block_size_invariance_test
+Command: "C:/progs/pico/pico2vibe/build/desktop_tools/block_size_invariance_test.exe"
+Directory: C:/progs/pico/pico2vibe/build/desktop_tools
+"block_size_invariance_test" start time: Oct 06 22:59 Hora oficial do Brasil
+Output:
+----------------------------------------------------------
+block_size_invariance_test passed; max error=0
+<end of output>
+Test time =   0.06 sec
+----------------------------------------------------------
+Test Passed.
+"block_size_invariance_test" end time: Oct 06 22:59 Hora oficial do Brasil
+"block_size_invariance_test" time elapsed: 00:00:00
+----------------------------------------------------------
+
+6/7 Testing: greybox_stage_test
+6/7 Test: greybox_stage_test
+Command: "C:/progs/pico/pico2vibe/build/desktop_tools/greybox_stage_test.exe"
+Directory: C:/progs/pico/pico2vibe/build/desktop_tools
+"greybox_stage_test" start time: Oct 06 22:59 Hora oficial do Brasil
+Output:
+----------------------------------------------------------
+greybox_stage_test passed: stage2_shelf_db=5.08763
+<end of output>
+Test time =   0.05 sec
+----------------------------------------------------------
+Test Passed.
+"greybox_stage_test" end time: Oct 06 22:59 Hora oficial do Brasil
+"greybox_stage_test" time elapsed: 00:00:00
+----------------------------------------------------------
+
+7/7 Testing: output_conditioner_test
+7/7 Test: output_conditioner_test
+Command: "C:/progs/pico/pico2vibe/build/desktop_tools/output_conditioner_test.exe"
+Directory: C:/progs/pico/pico2vibe/build/desktop_tools
+"output_conditioner_test" start time: Oct 06 22:59 Hora oficial do Brasil
+Output:
+----------------------------------------------------------
+output_conditioner_test passed
+<end of output>
+Test time =   0.05 sec
+----------------------------------------------------------
+Test Passed.
+"output_conditioner_test" end time: Oct 06 22:59 Hora oficial do Brasil
+"output_conditioner_test" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Oct 06 22:59 Hora oficial do Brasil

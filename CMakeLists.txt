@@ -24,7 +24,7 @@ if(PICO2VIBE_BUILD_FIRMWARE)
 
     project(univibe_rp2350_dma C CXX ASM)
 else()
-    project(pico2vibe VERSION 0.1.0 LANGUAGES CXX)
+    project(pico2vibe VERSION 0.9.0 LANGUAGES CXX)
 endif()
 
 if(PICO2VIBE_BUILD_JUCE_PLUGIN)

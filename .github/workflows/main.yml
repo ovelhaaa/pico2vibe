@@ -5,12 +5,14 @@ on:
     branches: [main]
     paths:
       - "desktop_tools/**"
+      - "src/dsp/**"
       - "univibe_rp2350_dma.cpp"
       - "scripts/**"
       - ".github/workflows/main.yml"
   pull_request:
     paths:
       - "desktop_tools/**"
+      - "src/dsp/**"
       - "univibe_rp2350_dma.cpp"
       - "scripts/**"
       - ".github/workflows/main.yml"
@@ -37,6 +39,9 @@ jobs:
 
       - name: Build
         run: cmake --build build/desktop_tools -j
+
+      - name: Run core readiness tests
+        run: ctest --test-dir build/desktop_tools --output-on-failure
 
       - name: Show build output
         run: |

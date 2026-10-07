@@ -17,3 +17,6 @@ __pycache__/
 /desktop_tools/test_out.wav
 /desktop_tools/test_fix_out.wav
 /desktop_tools/*.log
+
+# Generated browser preview
+/web/dist/

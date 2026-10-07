@@ -36,6 +36,8 @@ struct UnivibeParams {
         modern_hifi_phase_vibe,
     };
 
+    // Optional shared plugin factory bank index; -1 keeps CLI voicing controls.
+    int factory_preset = -1;
     bool mode_chorus = true;
     float sample_rate_hz = 44100.0f;
     float rate_hz = 0.85f;

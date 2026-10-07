@@ -1,5 +1,7 @@
 juce_add_plugin(Pico2VibePlugin
+  VERSION "0.9.0"
   COMPANY_NAME "pico2vibe"
+  DESCRIPTION "Optical vibe with chorus and vibrato"
   IS_SYNTH FALSE
   NEEDS_MIDI_INPUT FALSE
   NEEDS_MIDI_OUTPUT FALSE

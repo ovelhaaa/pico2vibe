@@ -212,6 +212,23 @@ void runStateMigrationTest() {
                 "corrupt state changed plugin parameters");
 }
 
+void runMalformedNumericStateTest() {
+    Pico2VibeAudioProcessor processor;
+    auto tree = processor.parameters.copyState();
+    tree.getChildWithProperty("id", "depth").setProperty("value", std::numeric_limits<double>::infinity(), nullptr);
+    tree.getChildWithProperty("id", "output_gain").setProperty("value", 999.0f, nullptr);
+    tree.appendChild(juce::ValueTree("PARAM"), nullptr); // Unknown incomplete child is ignored.
+    juce::MemoryBlock state;
+    const auto xml = tree.createXml();
+    juce::AudioProcessor::copyXmlToBinary(*xml, state);
+    processor.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+    require(std::isfinite(getParameterValue(processor, "depth")), "malformed state retained non-finite depth");
+    require(getParameterValue(processor, "output_gain") <= 2.0f, "state did not clamp output gain");
+    processor.prepareToPlay(kSampleRate, 33);
+    juce::AudioBuffer<float> buffer(2, 33);
+    processAt(processor, buffer, 0, "malformed numeric recovery");
+}
+
 void runProgramTrackingTest() {
     Pico2VibeAudioProcessor processor;
     const int custom = Pico2VibeAudioProcessor::customProgramIndex();
@@ -247,6 +264,82 @@ void runProgramTrackingTest() {
                 "Custom program parameter did not survive state restore");
 }
 
+void runPresetGlobalControlsTest() {
+    Pico2VibeAudioProcessor processor;
+    for (int quality = 0; quality < 3; ++quality) {
+        for (int bypass = 0; bypass < 2; ++bypass) {
+            setParameter(processor, "quality", static_cast<float>(quality));
+            setParameter(processor, "bypass", static_cast<float>(bypass));
+            for (int preset = 0; preset < Pico2VibeAudioProcessor::customProgramIndex(); ++preset) {
+                processor.setCurrentProgram(preset);
+                requireNear(getParameterValue(processor, "bypass"), static_cast<float>(bypass), 0.0f,
+                            "preset changed global bypass");
+                requireNear(getParameterValue(processor, "quality"), static_cast<float>(quality), 0.0f,
+                            "preset changed global Quality");
+                setParameter(processor, "quality", static_cast<float>((quality + 1) % 3));
+                require(processor.getCurrentProgram() == preset, "Quality edit selected Custom");
+                setParameter(processor, "quality", static_cast<float>(quality));
+            }
+            juce::MemoryBlock saved;
+            processor.getStateInformation(saved);
+            Pico2VibeAudioProcessor restored;
+            setParameter(restored, "quality", static_cast<float>((quality + 1) % 3));
+            setParameter(restored, "bypass", static_cast<float>(1 - bypass));
+            restored.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
+            requireNear(getParameterValue(restored, "quality"), static_cast<float>(quality), 0.0f,
+                        "project did not restore Quality");
+            requireNear(getParameterValue(restored, "bypass"), static_cast<float>(bypass), 0.0f,
+                        "project did not restore bypass");
+        }
+    }
+}
+
+void runProductProcessingMatrix() {
+    for (double sampleRate : { 44100.0, 48000.0, 96000.0, 192000.0 }) {
+        for (int channels : { 1, 2 }) {
+            for (int quality = 0; quality < 3; ++quality) {
+                Pico2VibeAudioProcessor processor;
+                juce::AudioProcessor::BusesLayout layout;
+                const auto channelSet = channels == 1 ? juce::AudioChannelSet::mono() : juce::AudioChannelSet::stereo();
+                layout.inputBuses.add(channelSet);
+                layout.outputBuses.add(channelSet);
+                require(processor.setBusesLayout(layout), "matrix bus layout rejected");
+                setParameter(processor, "quality", static_cast<float>(quality));
+                processor.prepareToPlay(sampleRate, 513);
+                int64_t timeline = 0;
+                for (int preset = 0; preset < Pico2VibeAudioProcessor::customProgramIndex(); ++preset) {
+                    processor.setCurrentProgram(preset);
+                    float presetPeak = 0.0f;
+                    for (int frames : { 1, 7, 31, 32, 33, 127, 513, 2049 }) {
+                        // Exercise block-boundary host automation while optical state runs.
+                        setParameter(processor, "depth", (frames % 11) / 10.0f);
+                        setParameter(processor, "mix", (frames % 7) / 6.0f);
+                        juce::AudioBuffer<float> buffer(channels, frames);
+                        juce::MidiBuffer midi;
+                        for (int ch = 0; ch < channels; ++ch)
+                            for (int i = 0; i < frames; ++i)
+                                buffer.setSample(ch, i, 0.2f * std::sin(2.0 * juce::MathConstants<double>::pi
+                                    * (ch == 0 ? 173.0 : 227.0) * (timeline + i) / sampleRate));
+                        processor.processBlock(buffer, midi);
+                        for (int ch = 0; ch < channels; ++ch)
+                            for (int i = 0; i < frames; ++i)
+                                {
+                                    const float value = buffer.getSample(ch, i);
+                                    require(std::isfinite(value) && std::abs(value) < 1.25f, "matrix non-finite/unsafe output");
+                                    presetPeak = std::max(presetPeak, std::abs(value));
+                                }
+                        timeline += frames;
+                    }
+                    require(presetPeak > 1.0e-6f, "product matrix preset remained silent");
+                }
+                juce::AudioBuffer<float> empty(channels, 0);
+                juce::MidiBuffer midi;
+                processor.processBlock(empty, midi);
+            }
+        }
+    }
+}
+
 void runRepeatedStateRestorationTest() {
     Pico2VibeAudioProcessor processor;
     juce::MemoryBlock originalState;
@@ -267,6 +360,7 @@ void runRepeatedStateRestorationTest() {
 void runComparisonStateTest() {
     Pico2VibeAudioProcessor processor;
     require(processor.getComparisonSlot() == 0, "comparison did not start on slot A");
+    setParameter(processor, "quality", 2.0f);
     setParameter(processor, "depth", 0.24f);
     setParameter(processor, "bypass", 1.0f);
 
@@ -276,11 +370,14 @@ void runComparisonStateTest() {
                 "slot B did not retain its independent initial sound");
     requireNear(getParameterValue(processor, "bypass"), 1.0f, 1.0e-5f,
                 "comparison switch did not preserve global bypass");
+    requireNear(getParameterValue(processor, "quality"), 2.0f, 0.0f, "A/B changed global Quality");
+    setParameter(processor, "quality", 0.0f);
     setParameter(processor, "depth", 0.66f);
 
     processor.selectComparisonSlot(0);
     requireNear(getParameterValue(processor, "depth"), 0.24f, 1.0e-5f,
                 "slot A sound was not recalled");
+    requireNear(getParameterValue(processor, "quality"), 0.0f, 0.0f, "slot A restored stale Quality");
     processor.selectComparisonSlot(1);
     requireNear(getParameterValue(processor, "depth"), 0.66f, 1.0e-5f,
                 "slot B sound was not recalled");
@@ -292,13 +389,38 @@ void runComparisonStateTest() {
     require(restored.getComparisonSlot() == 1, "active comparison slot was not restored");
     requireNear(getParameterValue(restored, "depth"), 0.66f, 1.0e-5f,
                 "active comparison sound was not restored");
+    requireNear(getParameterValue(restored, "quality"), 0.0f, 0.0f, "A/B project Quality not restored");
     restored.selectComparisonSlot(0);
+    requireNear(getParameterValue(restored, "quality"), 0.0f, 0.0f, "legacy slot Quality was not global");
     requireNear(getParameterValue(restored, "depth"), 0.24f, 1.0e-5f,
                 "stored slot A did not survive project restore");
 
     auto malformedXml = juce::AudioProcessor::getXmlFromBinary(
         projectState.getData(), static_cast<int>(projectState.getSize()));
     require(malformedXml != nullptr, "A/B project state did not decode as XML");
+    // Migrate a v1 slot containing stale global controls from the old implementation.
+    juce::MemoryBlock legacySlot;
+    require(legacySlot.fromBase64Encoding(malformedXml->getStringAttribute("comparison_state_a")),
+            "slot A did not decode");
+    auto legacySlotXml = juce::AudioProcessor::getXmlFromBinary(
+        legacySlot.getData(), static_cast<int>(legacySlot.getSize()));
+    require(legacySlotXml != nullptr, "slot A XML missing");
+    auto* qualityChild = legacySlotXml->createNewChildElement("PARAM");
+    qualityChild->setAttribute("id", "quality");
+    qualityChild->setAttribute("value", 2.0);
+    auto* bypassChild = legacySlotXml->createNewChildElement("PARAM");
+    bypassChild->setAttribute("id", "bypass");
+    bypassChild->setAttribute("value", 0.0);
+    juce::AudioProcessor::copyXmlToBinary(*legacySlotXml, legacySlot);
+    malformedXml->setAttribute("comparison_state_a", legacySlot.toBase64Encoding());
+    juce::MemoryBlock legacyProject;
+    juce::AudioProcessor::copyXmlToBinary(*malformedXml, legacyProject);
+    Pico2VibeAudioProcessor legacyRestored;
+    legacyRestored.setStateInformation(legacyProject.getData(), static_cast<int>(legacyProject.getSize()));
+    legacyRestored.selectComparisonSlot(0);
+    requireNear(getParameterValue(legacyRestored, "quality"), 0.0f, 0.0f, "old slot changed global Quality");
+    requireNear(getParameterValue(legacyRestored, "bypass"), 1.0f, 0.0f, "old slot changed global bypass");
+
     malformedXml->setAttribute("comparison_state_a", "999999999.invalid");
     juce::MemoryBlock malformedState;
     juce::AudioProcessor::copyXmlToBinary(*malformedXml, malformedState);
@@ -327,6 +449,7 @@ void runFactoryPresetAudioTest() {
     for (int preset = 0; preset < names.size(); ++preset) {
         Pico2VibeAudioProcessor processor;
         processor.prepareToPlay(kSampleRate, blockSize);
+        setParameter(processor, "quality", 2.0f); // Calibrated factory loudness uses High explicitly.
         processor.setCurrentProgram(preset);
 
         double sumSquares = 0.0;
@@ -516,7 +639,10 @@ int main(int argc, char** argv) {
         runStereoTransportTest();
         runMonoSmokeTest();
         runStateMigrationTest();
+        runMalformedNumericStateTest();
         runProgramTrackingTest();
+        runPresetGlobalControlsTest();
+        runProductProcessingMatrix();
         runRepeatedStateRestorationTest();
         runComparisonStateTest();
         runFactoryPresetAudioTest();

@@ -77,3 +77,7 @@ add_executable(greybox_stage_test
 )
 configure_desktop_tool_target(greybox_stage_test)
 add_test(NAME greybox_stage_test COMMAND greybox_stage_test)
+
+add_executable(output_conditioner_test src/output_conditioner_test.cpp)
+configure_desktop_tool_target(output_conditioner_test)
+add_test(NAME output_conditioner_test COMMAND output_conditioner_test)
