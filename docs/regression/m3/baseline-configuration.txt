@@ -1,0 +1,11 @@
+base_commit=1e010562bf1f23cd5887fdb6ec29691b37b5dcf2
+remote_main_verified=2026-10-07
+sample_rate=44100
+quality=High
+seed=1
+factory=0..11
+factory_levels=M0/M1
+optical=ReferenceOptical
+topology=SingleLampReference
+conditioner=all_enabled
+legacy_comparison=LegacyOptical/Studio

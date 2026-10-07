@@ -65,6 +65,11 @@ struct UnivibeParams {
     CompareMode compare_mode = CompareMode::none;
     QualityMode quality_mode = QualityMode::standard;
     bool output_conditioning = false;
+    bool disable_output_limiter = false;
+    bool disable_output_headroom = false;
+    bool disable_final_conditioning = false;
+    bool disable_wet_compensation = false;
+    bool disable_auto_level = false;
     uint32_t seed = 1;
 };
 

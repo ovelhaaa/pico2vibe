@@ -1,0 +1,17 @@
+revision,path,optical,quality,median_ns_per_stereo_frame,min_run_mean,max_run_mean
+before,full_core,legacy,0,724.03,429.937,782.474
+before,full_core,legacy,1,763.218,477.586,824.635
+before,full_core,legacy,2,1246.95,955.301,1332.92
+before,optical_step,legacy,-1,81.5969,79.6819,85.8162
+before,full_core,reference,0,644.333,605.526,767.659
+before,full_core,reference,1,695.377,604.312,713.487
+before,full_core,reference,2,1272.65,1139.32,1303.84
+before,optical_step,reference,-1,139.086,125.569,143.414
+after,full_core,legacy,0,642.565,587.705,683.489
+after,full_core,legacy,1,664.956,613.901,796.131
+after,full_core,legacy,2,1134.4,995.965,1272.35
+after,optical_step,legacy,-1,77.7488,73.2158,82.6456
+after,full_core,reference,0,658.352,611.513,788.567
+after,full_core,reference,1,669.548,618.908,1051.77
+after,full_core,reference,2,1206.32,891.398,1672.29
+after,optical_step,reference,-1,131.964,95.8858,133.373

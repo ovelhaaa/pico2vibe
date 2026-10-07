@@ -13,6 +13,11 @@ import struct
 import sys
 
 
+def normalize_hf(rows):
+    def rename(value):
+        return value.replace("alias_proxy_hf_db", "broadband_hf_db").replace("guitar_alias_proxy_db", "guitar_broadband_hf_db").replace("sweep_alias_proxy_db", "sweep_broadband_hf_db")
+    return [{rename(k): rename(v) for k, v in row.items()} for row in rows]
+
 def wav_samples(path):
     raw = path.read_bytes()
     if raw[:4] != b"RIFF" or raw[8:12] != b"WAVE":
@@ -48,9 +53,9 @@ def compare(before, after, output):
         candidate = after / preset.name
         for name in ("summary.csv", "frequency_response.csv", "notch_tracking.csv", "thd_vs_drive.csv"):
             with (preset / "metrics" / name).open(newline="") as f:
-                old = list(csv.DictReader(f))
+                old = normalize_hf(list(csv.DictReader(f)))
             with (candidate / "metrics" / name).open(newline="") as f:
-                new = list(csv.DictReader(f))
+                new = normalize_hf(list(csv.DictReader(f)))
             if len(old) != len(new):
                 raise ValueError(f"Row count changed: {preset.name}/{name}")
             for index, (a, b) in enumerate(zip(old, new)):

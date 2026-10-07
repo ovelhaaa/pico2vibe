@@ -66,7 +66,7 @@ Ferramenta para regressão de DSP. Ela:
    - resposta em frequência aproximada (`frequency_response.csv`)
    - rastreamento aproximado de notch no tempo (`notch_tracking.csv`)
    - THD por nível de drive (nível de entrada) (`thd_vs_drive.csv`)
-   - energia de alta frequência (proxy de aliasing) (`summary.csv`, `thd_vs_drive.csv`)
+   - energia de alta frequência (m�trica HF broadband, n�o aliasing) (`summary.csv`, `thd_vs_drive.csv`)
    - score de calibracao por voicing (`calibration_score.csv`, `calibration_summary.csv`)
    - sweep de interacao dry/wet quando `--mix-sweep` esta ativo (`mix_sweep.csv`)
 5. Facilita A/B com baseline via `--compare-to`.
@@ -228,3 +228,24 @@ from `252063c`. Full production audio metrics remain in `dsp_validate`.
 
 Detailed constraints, tolerances, results and reproduction commands:
 [docs/m2-1-optical-calibration.md](../docs/m2-1-optical-calibration.md).
+
+## M3 nonlinear characterization
+
+`nonlinear_analyze OUTPUT_DIR` exports static transfers, individual harmonics,
+classified folded-harmonic alias energy, multitone IMD/alias/residual, FIR responses,
+CPU/state and aligned low-frequency nulls. `--self-test` verifies FFT scaling and
+alias classification. The matrix covers 44.1/48/96/192 kHz and -60..0 dBFS.
+Candidates are desktop-only; shipping High uses lightweight midpoint smoothing.
+
+```powershell
+build/desktop_tools/nonlinear_analyze.exe docs/regression/m3
+build/desktop_tools/nonlinear_test.exe docs/regression/m3/numerical.csv
+python desktop_tools/scripts/plot_nonlinear.py docs/regression/m3
+```
+
+`dsp_validate` supports independent analysis flags `--no-output-limiter`,
+`--no-output-headroom`, `--no-final-conditioning`, `--no-wet-compensation`,
+`--no-auto-level`. Essential numerical/feedback safeguards remain enabled.
+Whole-effect `broadband_hf_db` replaces the misleading alias-proxy label; use the
+static analyzer for alias attribution. Comparison scripts accept historical names.
+Full methods, equations, results and limitations: [M3 report](../docs/m3-nonlinear-fidelity.md).
