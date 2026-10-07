@@ -1,0 +1,9 @@
+path,mode,quality,mean_ns_per_stereo_frame,max_block_us,blocks,checksum
+full_core,legacy,0,561.953,350.4,10000,-1.28389
+full_core,legacy,1,554.425,2053.2,10000,-2.44507
+full_core,legacy,2,942.26,1470.5,10000,-3.55157
+optical_step,legacy,-1,76.007,95.8,20000,19098.7
+full_core,reference,0,615.165,1317.9,10000,19097.6
+full_core,reference,1,570.574,1194.8,10000,19096.4
+full_core,reference,2,1044.61,453.3,10000,19095.3
+optical_step,reference,-1,102.112,141.5,20000,44643.3

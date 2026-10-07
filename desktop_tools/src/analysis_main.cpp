@@ -32,6 +32,7 @@ struct RunConfig {
     float impulse_seconds = 1.0f;
     fs::path compare_to;
     UnivibeParams::QualityMode quality_mode = UnivibeParams::QualityMode::standard;
+    bool single_lamp_reference = false;
     bool legacy_optical = false;
     bool original_factory_levels = false;
     bool tempo_sync = false;
@@ -61,7 +62,8 @@ void usage() {
         << "  --sweep-seconds <seg>          Duracao do sweep (padrao: 8)\n"
         << "  --compare-to <pasta>           Pasta de baseline para gerar diff de summary\n"
         << "  --optical <legacy|reference>    Optical path only; same grey-box/audio DSP\n"
-        << "  --factory-levels <baseline|current> Original or M2 factory level trims\n"
+        << "  --topology <reference|studio>    Single physical lamp or production stereo (default studio)\n"
+        << "  --factory-levels <baseline|current> Frozen M0/M1 or current factory gains\n"
         << "  --quality <eco|standard|high>  Qualidade do DSP (padrao: standard)\n"
         << "  --tempo-sync                   Sincroniza LFO ao BPM/divisao\n"
         << "  --tempo-bpm <30..300>          BPM usado com --tempo-sync\n"
@@ -794,6 +796,7 @@ void write_signal_pair(const fs::path& dir,
 CalibrationMetrics run_preset(const std::string& preset_name, const RunConfig& cfg) {
     UnivibeParams params = preset_params(preset_name);
     params.quality_mode = cfg.quality_mode;
+    params.single_lamp_reference = cfg.single_lamp_reference;
     params.legacy_optical = cfg.legacy_optical;
     params.original_factory_levels = cfg.original_factory_levels;
     params.tempo_sync = cfg.tempo_sync;
@@ -929,6 +932,10 @@ RunConfig parse_args(int argc, char** argv) {
             cfg.sweep_seconds = std::stof(next());
         } else if (arg == "--compare-to") {
             cfg.compare_to = next();
+        } else if (arg == "--topology") {
+            auto topology = next();
+            if (topology != "reference" && topology != "studio") throw std::runtime_error("Invalid topology");
+            cfg.single_lamp_reference = topology == "reference";
         } else if (arg == "--optical") {
             auto mode = next();
             if (mode != "legacy" && mode != "reference") throw std::runtime_error("Invalid optical mode");

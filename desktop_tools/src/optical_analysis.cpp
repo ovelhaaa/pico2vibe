@@ -58,6 +58,31 @@ void summarize(std::ostream& out, const std::string& mode, float rate, float dep
        <<lag<<','<<riseFraction<<','<<interval(imin,true)<<','<<interval(imax,false)<<','<<stability<<'\n';
 }
 
+struct Aggregate {
+    double low=1e30, high=0, mean=0, logmean=0;
+    int trajectories=0;
+    void add(const std::vector<Point>& points, int cell) {
+        double sum=0, logs=0;
+        for(const auto& p:points) {
+            double r=p.f.resistance[cell]; low=std::min(low,r); high=std::max(high,r);
+            sum+=r; logs+=std::log(r);
+        }
+        mean+=sum/points.size(); logmean+=logs/points.size(); ++trajectories;
+    }
+};
+std::array<Aggregate,4> calibrationStats;
+void calibration_report(const fs::path& dir) {
+    std::ofstream csv(dir/"calibration.csv");
+    csv<<"cell,simulated_global_min,simulated_global_max,simulated_arithmetic_mean,simulated_geometric_mean,paper_min,paper_max,paper_mean,min_relative_error,max_relative_error,mean_relative_error\n";
+    for(int c=0;c<4;++c) {
+        const auto& s=calibrationStats[c]; const auto& p=kDafxCells[c];
+        double mean=s.mean/s.trajectories;
+        csv<<c+1<<','<<s.low<<','<<s.high<<','<<mean<<','<<std::exp(s.logmean/s.trajectories)
+           <<','<<p.measuredMinResistance<<','<<p.measuredMaxResistance<<','<<p.measuredMeanResistance
+           <<','<<s.low/p.measuredMinResistance-1<<','<<s.high/p.measuredMaxResistance-1
+           <<','<<mean/p.measuredMeanResistance-1<<'\n';
+    }
+}
 void trajectory(const fs::path& dir, OpticalMode mode, float rate,float depth,float fsample,
                 std::ostream& summary) {
     std::array<float,PERIOD> zero{},outL{},outR{};
@@ -66,6 +91,7 @@ void trajectory(const fs::path& dir, OpticalMode mode, float rate,float depth,fl
     vibe.set_param(VibeParamId::LfoRateHz,rate); vibe.set_param(VibeParamId::Depth,depth);
     vibe.set_param(VibeParamId::DriftAmount,0); vibe.set_param(VibeParamId::StereoWidth,0);
     vibe.reseed(1); vibe.set_optical_mode(mode);
+    vibe.set_optical_topology(OpticalTopology::SingleLampReference);
     std::string name=mode==OpticalMode::LegacyOptical?"legacy":"reference";
     std::string stem=name+"_"+std::to_string(rate)+"_"+std::to_string(depth);
     std::ofstream csv(dir/(stem+".csv")); csv<<std::setprecision(9);
@@ -84,6 +110,8 @@ void trajectory(const fs::path& dir, OpticalMode mode, float rate,float depth,fl
             csv<<'\n';
         }
     }
+    if(mode==OpticalMode::ReferenceOptical)
+        for(int c=0;c<4;++c) calibrationStats[c].add(points,c);
     for(int cell=-1;cell<4;++cell) summarize(summary,name,rate,depth,points,cell,fsample);
     // Phase-binned averages of multiple measured simulated periods, never hardware data.
     std::array<std::array<double,6>,256> bins{}; std::array<int,256> counts{};
@@ -132,8 +160,8 @@ void benchmark(const fs::path& dir) {
                     v.process_legacy_optical(e,e,0.85f,0.03f,0.97f,1,0.015f);
                     sink=sink+v.mod_res_l*1e-6f;
                 } else {
-                    auto& a=v.reference_optical[0].process_sample(0,e,0.85f,0.03f,0.97f);
-                    auto& z=v.reference_optical[1].process_sample(0,e,0.85f,0.03f,0.97f);
+                    auto& a=v.reference_lamp.process_sample(0,e,0.85f,0.03f,0.97f);
+                    auto& z=v.studio_lamp.process_sample(0,e,0.85f,0.03f,0.97f);
                     sink=sink+(a.resistance[0]+z.resistance[0])*1e-6f;
                 }
             }
@@ -157,7 +185,7 @@ int main(int argc,char** argv) {
         if(!std::isfinite(sampleRate)||sampleRate<8000||sampleRate>384000) throw std::runtime_error("Invalid sample rate");
         fs::create_directories(dir);
         std::ofstream metadata(dir/"configuration.txt");
-        metadata<<"trajectory_sample_rate="<<sampleRate<<"\ntrajectory_stride=32\ncycles=4\nseed=1\ndrift=0\nquality=High\nvoicing=ClassicChorus\nbenchmark_sample_rate=44100\nsizeof_OpticalModel="<<sizeof(OpticalModel)<<"\nsizeof_Vibe="<<sizeof(Vibe)<<'\n';
+        metadata<<"trajectory_sample_rate="<<sampleRate<<"\ntopology=SingleLampReference\naggregate_weighting=equal_speed_intensity_trajectories\ntrajectory_stride=32\ncycles=4\nseed=1\ndrift=0\nquality=High\nvoicing=ClassicChorus\nbenchmark_topology=StudioStereo\nbenchmark_sample_rate=44100\nsizeof_OpticalModel="<<sizeof(OpticalModel)<<"\nsizeof_Vibe="<<sizeof(Vibe)<<'\n';
         const auto base = make_vibe_preset(VibeVoicing::ClassicChorus);
         metadata<<"sweep_min="<<base.user.sweep_min<<"\nsweep_max="<<base.user.sweep_max<<"\nlamp_lag="<<base.user.lamp_lag
                 <<"\nreference_lamp_attack_s="<<base.tuning.lamp_attack_sec*2.4f
@@ -168,6 +196,7 @@ int main(int argc,char** argv) {
             for(auto mode:{OpticalMode::LegacyOptical,OpticalMode::ReferenceOptical})
                 for(float rate:{0.2f,0.5f,1.f,2.f,4.f,7.f})
                     for(float depth:{0.15f,0.35f,0.60f,0.85f,1.f}) trajectory(dir,mode,rate,depth,sampleRate,summary);
+            calibration_report(dir);
         }
         benchmark(dir);
         std::cout<<"Optical CSVs and CPU comparison: "<<dir<<'\n';

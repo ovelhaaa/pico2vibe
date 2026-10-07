@@ -37,6 +37,7 @@ struct UnivibeParams {
     };
 
     // Optional shared plugin factory bank index; -1 keeps CLI voicing controls.
+    bool single_lamp_reference = false;
     bool legacy_optical = false;
     bool original_factory_levels = false;
     int factory_preset = -1;

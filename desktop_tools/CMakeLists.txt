@@ -88,3 +88,6 @@ add_test(NAME optical_model_test COMMAND optical_model_test)
 
 add_executable(optical_analyze src/optical_analysis.cpp)
 configure_desktop_tool_target(optical_analyze)
+
+add_executable(notch_trajectory src/notch_trajectory.cpp)
+configure_desktop_tool_target(notch_trajectory)

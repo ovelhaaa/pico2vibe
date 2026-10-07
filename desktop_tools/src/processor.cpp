@@ -200,6 +200,7 @@ struct DesktopUnivibeProcessor::Impl {
         }
 
 
+        improved->set_optical_topology(p.single_lamp_reference ? OpticalTopology::SingleLampReference : OpticalTopology::StudioStereo);
         improved->set_optical_mode(p.legacy_optical ? OpticalMode::LegacyOptical : OpticalMode::ReferenceOptical);
 
         if (p.engine_mode == UnivibeParams::EngineMode::legacy || p.compare_mode == UnivibeParams::CompareMode::difference) {

@@ -1243,6 +1243,9 @@ public:
     void set_quality_mode(VibeQualityMode mode);
     VibeQualityMode quality_mode() const { return quality; }
 
+    // Internal topology selection: production defaults to creative Studio stereo.
+    void set_optical_topology(OpticalTopology topology) { optical_topology = topology; reset_audio_state(true); }
+    OpticalTopology get_optical_topology() const { return optical_topology; }
     void set_optical_mode(OpticalMode mode) { optical_mode = mode; reset_audio_state(true); }
     OpticalMode get_optical_mode() const { return optical_mode; }
     const OpticalFrame& optical_frame(int lane = 0) const { return optical_frames[lane == 0 ? 0 : 1]; }
@@ -1269,7 +1272,9 @@ private:
 
     EffectLFO lfo;
     OpticalMode optical_mode = OpticalMode::ReferenceOptical;
-    OpticalModel reference_optical[2];
+    OpticalTopology optical_topology = OpticalTopology::StudioStereo;
+    OpticalModel reference_lamp; // one physical lamp and four photocells
+    OpticalModel studio_lamp;    // phase-offset creative extension
     OpticalFrame optical_frames[2];
     VibeUserParams optical_user;
     void process_legacy_optical(float lfol, float lfor, float depth, float sweep_min, float sweep_max, float ldr_curve_scale, float ldr_coeff_alpha);
@@ -1932,16 +1937,15 @@ void Vibe::init_vibes() {
         OpticalCalibration c;
         c.lampAttack = params.tuning.lamp_attack_sec * 2.4f;
         c.lampRelease = params.tuning.lamp_release_sec * 1.75f;
-        c.minResistance = params.tuning.ldr_min_ohms;
-        c.maxResistance = params.tuning.ldr_max_ohms;
         c.ldrCurve = 1.2f * clampf(params.tuning.ldr_curve / 7.6009f, 0.5f, 2.0f);
-        c.tolerance = 0; // stage mismatch already contains seeded fixed tolerance.
-        for (int cell = 0; cell < 4; ++cell) c.cellScale[cell] = stage[lane*4+cell].ldr_mismatch;
-        reference_optical[lane].prepare(sample_rate_hz);
-        reference_optical[lane].configure(c, rng_seed);
-        reference_optical[lane].set_lag(params.user.lamp_lag);
-        reference_optical[lane].reset();
-        optical_frames[lane] = reference_optical[lane].frame();
+        // Absolute cells carry their own statistics; do not apply Legacy's
+        // relative mean scaling a second time. Both lanes use one cell identity.
+        c.tolerance = 0.012f;
+        (lane == 0 ? reference_lamp : studio_lamp).prepare(sample_rate_hz);
+        (lane == 0 ? reference_lamp : studio_lamp).configure(c, rng_seed);
+        (lane == 0 ? reference_lamp : studio_lamp).set_lag(params.user.lamp_lag);
+        (lane == 0 ? reference_lamp : studio_lamp).reset();
+        optical_frames[lane] = (lane == 0 ? reference_lamp : studio_lamp).frame();
     }
     // Prime both engines so debug/desktop code can flip legacy_saturation while
     // modulation is frozen without leaving the inactive coefficient set at zero.
@@ -1962,8 +1966,8 @@ void Vibe::set_filter_coefs(fparams &target, float n0, float n1, float d1) {
 void Vibe::reset_audio_state(bool reset_lfo) {
     optical_user = params.user;
     for (int lane = 0; lane < 2; ++lane) {
-        reference_optical[lane].reset();
-        optical_frames[lane] = reference_optical[lane].frame();
+        (lane == 0 ? reference_lamp : studio_lamp).reset();
+        optical_frames[lane] = (lane == 0 ? reference_lamp : studio_lamp).frame();
     }
     lamp_state_l = 0.0f;
     lamp_state_r = 0.0f;
@@ -2038,8 +2042,8 @@ void Vibe::modulate_allpass(float res_l, float res_r) {
         min_stage_res_val = fmaxf(min_stage_res_val, min_stage_res[i]);
 #endif
         const float stage_res = clampf(optical_mode == OpticalMode::ReferenceOptical ? optical_frames[i/4].resistance[i&3] : base_res * stage[i].ldr_mismatch,
-                                       min_stage_res_val,
-                                       params.tuning.ldr_max_ohms);
+                                       optical_mode == OpticalMode::ReferenceOptical ? fmaxf(min_stage_res[i], reference_lamp.cell_min(i&3)) : min_stage_res_val,
+                                       optical_mode == OpticalMode::ReferenceOptical ? reference_lamp.cell_max(i&3) : params.tuning.ldr_max_ohms);
         const float currentRv = 4700.0f + stage_res;
         const int cell = i & 3;
         const float model_amount = (params.profile == VibeProfile::Classic) ? 1.0f : 0.45f;
@@ -2060,8 +2064,8 @@ void Vibe::modulate_legacy_network(float res_l, float res_r) {
         min_stage_res_val = fmaxf(min_stage_res_val, min_stage_res[i]);
 #endif
         const float stage_res = clampf(optical_mode == OpticalMode::ReferenceOptical ? optical_frames[i/4].resistance[i&3] : base_res * stage[i].ldr_mismatch,
-                                       min_stage_res_val,
-                                       params.tuning.ldr_max_ohms);
+                                       optical_mode == OpticalMode::ReferenceOptical ? fmaxf(min_stage_res[i], reference_lamp.cell_min(i&3)) : min_stage_res_val,
+                                       optical_mode == OpticalMode::ReferenceOptical ? reference_lamp.cell_max(i&3) : params.tuning.ldr_max_ohms);
         const float currentRv = 4700.0f + stage_res;
         const float R1pRv = R1 + currentRv;
         const float C2pC1 = C2 + C1[i];
@@ -2269,11 +2273,16 @@ void Vibe::out(float *smpsl, float *smpsr, int frames) {
             optical_user.tempo_bpm = params.user.tempo_bpm;
             optical_user.tempo_division_beats = params.user.tempo_division_beats;
             if ((sample_index % 32u) == 0u) {
-                reference_optical[0].set_lag(optical_user.lamp_lag);
-                reference_optical[1].set_lag(optical_user.lamp_lag);
+                reference_lamp.set_lag(optical_user.lamp_lag);
+                studio_lamp.set_lag(optical_user.lamp_lag);
             }
         }
-        lfo.processSample(&lfol, &lfor, reference ? optical_user : smoothed_user, params.tuning, params.lfo_shape, params.profile, drift_alpha, lfo_smoothing, inv_sample_rate, reference);
+        auto reference_lfo_user = optical_user;
+        if (optical_topology == OpticalTopology::SingleLampReference) {
+            reference_lfo_user.stereo_width = 0;
+            reference_lfo_user.drift_amount = 0;
+        }
+        lfo.processSample(&lfol, &lfor, reference ? reference_lfo_user : smoothed_user, params.tuning, params.lfo_shape, params.profile, drift_alpha, lfo_smoothing, inv_sample_rate, reference);
 
         const float depth = depth_ramp.tick();
         const float sweep_min = sweep_min_ramp.tick();
@@ -2281,10 +2290,12 @@ void Vibe::out(float *smpsl, float *smpsr, int frames) {
         if (optical_mode == OpticalMode::LegacyOptical) {
             process_legacy_optical(lfol, lfor, depth, sweep_min, sweep_max, ldr_curve_scale, ldr_coeff_alpha);
         } else {
-            optical_frames[0] = reference_optical[0].process_sample(lfo.phase_left(), lfol, optical_user.depth, optical_user.sweep_min, optical_user.sweep_max);
-            optical_frames[1] = reference_optical[1].process_sample(lfo.phase_right(), lfor, optical_user.depth, optical_user.sweep_min, optical_user.sweep_max);
-            lamp_state_l = reference_optical[0].temperature();
-            lamp_state_r = reference_optical[1].temperature();
+            optical_frames[0] = reference_lamp.process_sample(lfo.phase_left(), lfol, optical_user.depth, optical_user.sweep_min, optical_user.sweep_max);
+            optical_frames[1] = optical_topology == OpticalTopology::SingleLampReference
+                ? optical_frames[0]
+                : studio_lamp.process_sample(lfo.phase_right(), lfor, optical_user.depth, optical_user.sweep_min, optical_user.sweep_max);
+            lamp_state_l = reference_lamp.temperature();
+            lamp_state_r = optical_topology == OpticalTopology::SingleLampReference ? lamp_state_l : studio_lamp.temperature();
         }
 #if !VIBE_DIAG_FREEZE_MODULATION
 #if VIBE_COEFF_UPDATE_PER_SAMPLE

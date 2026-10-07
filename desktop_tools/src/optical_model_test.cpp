@@ -21,7 +21,7 @@ Stats measure(float rate, float depth, float fs) {
         oscillator.processSample(&excitation, &unused, user, tuning, LfoShape::Sine,
                                  VibeProfile::Classic, 0, 0, 1/fs, true);
         const auto& f = model.process_sample(oscillator.phase_left(), excitation, depth, 0.04f, 0.96f);
-        for (float r : f.resistance) require(std::isfinite(r) && r >= 3900 && r <= 1e6f, "unbounded resistance");
+        for (float r : f.resistance) require(std::isfinite(r) && r >= 6000 && r <= 4.3e6f, "unbounded resistance");
         require(std::isfinite(f.brightness) && f.brightness >= 0 && f.brightness <= 1, "unbounded lamp");
         if (i >= n - int(fs / rate)) {
             result.low = std::min(result.low, double(f.brightness));
@@ -71,6 +71,29 @@ int main() {
                 previous = r;
             }
         }
+        for (int c=0; c<4; ++c) {
+            require(model.resistance_for_brightness(0,c)>1e6f, "per-cell dark range lost");
+            require(std::abs(model.resistance_for_brightness(0,c)/kDafxCells[c].measuredMaxResistance-1)<0.025f, "dark bound constraint");
+            require(std::abs(model.resistance_for_brightness(1,c)/kDafxCells[c].measuredMinResistance-1)<0.025f, "bright bound constraint");
+            require(std::abs(model.resistance_for_brightness(0.5f,c)/kDafxCells[c].measuredMeanResistance-1)<0.025f, "mean pivot constraint");
+        }
+        require(model.drive_for_region(0.2f)<model.drive_for_region(0.4f), "sweep mapping has a dead region");
+        require(model.drive_for_region(0.58f)!=0.58f, "sweep directly interpreted as voltage");
+        // Physical reference shares exactly one optical state, regardless of width.
+        std::array<float,32> z{},ol{},orr{};
+        Vibe physical(ol.data(),orr.data()); physical.prepare(48000);
+        physical.set_optical_topology(OpticalTopology::SingleLampReference);
+        physical.set_param(VibeParamId::StereoWidth,1);
+        physical.set_param(VibeParamId::DriftAmount,0.1f);
+        for(int i=0;i<4000;++i) {
+            physical.out(z.data(),z.data(),32);
+            auto a=physical.optical_frame(0), b=physical.optical_frame(1);
+            require(a.phase==b.phase && a.drive==b.drive && a.brightness==b.brightness,"reference lamp split");
+            for(int c=0;c<4;++c) require(a.resistance[c]==b.resistance[c],"reference cells split");
+        }
+        physical.set_optical_topology(OpticalTopology::StudioStereo);
+        for(int i=0;i<4000;++i) physical.out(z.data(),z.data(),32);
+        require(physical.optical_frame(0).brightness!=physical.optical_frame(1).brightness,"studio width lost");
         auto slow = measure(0.2f, 0.85f, 48000);
         auto fast = measure(7, 0.85f, 48000);
         require(fast.high-fast.low < 0.8*(slow.high-slow.low), "speed inertia missing");
@@ -118,7 +141,8 @@ int main() {
         OpticalModel step;
         step.prepare(48000);
         int rise10=-1,rise90=-1,fall90=-1,fall10=-1;
-        const float lowPower=0.04f*0.04f, highPower=1;
+        // At full region/depth the calibrated bias/drive yields 0..0.96.
+        const float lowPower=0, highPower=0.96f*0.96f;
         for(int i=0;i<24000;++i) {
             step.process_sample(0,1,1,0,1);
             float t=step.temperature();
@@ -133,7 +157,7 @@ int main() {
         }
         require(rise90>rise10&&fall10>fall90&&(fall10-fall90)>2*(rise90-rise10), "asymmetric step response failed");
         // Supported boundaries, reversed regions, malformed internal calibration.
-        OpticalCalibration bad; bad.lampAttack = NAN; bad.minResistance = -1; bad.maxResistance = INFINITY;
+        OpticalCalibration bad; bad.lampAttack = NAN; bad.cells[0].measuredMinResistance = -1; bad.cells[0].measuredMaxResistance = INFINITY;
         model.configure(bad, 42);
         for (float depth : {0.f, 1.f}) for (float lag : {0.35f, 2.5f}) {
             model.set_lag(lag);
