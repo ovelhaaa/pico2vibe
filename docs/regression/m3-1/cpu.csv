@@ -1,0 +1,11 @@
+algorithm,ns_per_sample,state_bytes,total_object_bytes,legacy_nominal_delay_samples
+direct,6.24619,0,4976,0
+midpoint,11.6467,25,4976,0.888889
+adaa1,48.7385,25,4976,0.5
+fir2,323.967,4648,4976,64
+fir4,638.229,4648,4976,64
+tanh_reference,11.6722,0,4976,0
+allpass2,20.0436,120,4976,nan
+allpass4,52.6592,120,4976,nan
+allpass2_adaa,109.018,120,4976,nan
+elliptic2,30.7014,128,4976,nan

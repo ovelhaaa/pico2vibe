@@ -1,0 +1,16 @@
+metric,value
+average_tracked_notch_db,-6.943560
+deepest_tracked_notch_db,-11.320744
+guitar_broadband_hf_db,-80.560692
+guitar_lr_correlation,0.989034
+guitar_mono_fold_db,-0.023906
+guitar_side_to_mid_db,-22.580879
+sweep_broadband_hf_db,-82.506653
+sweep_lr_correlation,0.992792
+sweep_mono_fold_db,-0.015683
+sweep_side_to_mid_db,-24.415792
+tracked_notch_count,8.000000
+tracked_notch_high_hz,11371.962891
+tracked_notch_low_hz,26.167307
+tracked_notch_span_oct,8.763500
+worst_thd_db,-17.268242

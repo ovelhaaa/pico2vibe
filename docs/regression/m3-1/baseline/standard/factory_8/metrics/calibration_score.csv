@@ -1,0 +1,10 @@
+metric,value
+calibration_score,100.000000
+deepest_notch_db,-7.985163
+tracked_notch_span_oct,6.979779
+tracked_notch_count,30.000000
+guitar_side_to_mid_db,-25.224365
+guitar_mono_fold_db,-0.013023
+guitar_lr_correlation,0.994106
+worst_thd_db,-19.818424
+guitar_broadband_hf_db,-80.117561

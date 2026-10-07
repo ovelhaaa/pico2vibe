@@ -1,14 +1,16 @@
 #pragma once
 #include "dsp/nonlinear_transfer.hpp"
+#include "dsp/nonlinear_aa.hpp"
+#include "elliptic_candidate.hpp"
 #include <array>
 #include <cmath>
 #include <algorithm>
 
 namespace nonlinear {
 constexpr double pi = 3.14159265358979323846;
-enum class Mode { Direct, Midpoint, ADAA, Fir2, Fir4, TanhReference };
+enum class Mode { Direct, Midpoint, ADAA, Fir2, Fir4, TanhReference, Allpass2, Allpass4, Allpass2ADAA, Elliptic2 };
 inline const char* name(Mode m) {
-    constexpr const char* names[] = {"direct", "midpoint", "adaa1", "fir2", "fir4", "tanh_reference"};
+    constexpr const char* names[] = {"direct", "midpoint", "adaa1", "fir2", "fir4", "tanh_reference", "allpass2", "allpass4", "allpass2_adaa", "elliptic2"};
     return names[static_cast<int>(m)];
 }
 struct Transfer {
@@ -73,14 +75,20 @@ struct Processor {
     Mode mode;
     Transfer transfer;
     Fir fir;
+    VibeAAState aa;
+    Elliptic2x elliptic;
     double previous = 0, y1 = 0, lp = 0;
     bool primed = false;
     Processor(Mode m, Transfer t) : mode(m), transfer(t), fir(m==Mode::Fir4 ? 4 : 2) {}
-    void reset() { previous=y1=lp=0; primed=false; fir.reset(); }
+    void reset() { previous=y1=lp=0; primed=false; fir.reset(); aa.reset();elliptic.reset(); }
     double process(double x) {
         if (mode==Mode::Direct) return transfer(x);
         if (mode==Mode::TanhReference) return transfer.tanh_reference(x);
         if (mode==Mode::Fir2 || mode==Mode::Fir4) return fir.process(x, transfer);
+        if(mode==Mode::Allpass2 || mode==Mode::Allpass4 || mode==Mode::Allpass2ADAA)
+            return aa.process(float(x),mode==Mode::Allpass2 ? NonlinearAA::Oversample2xLowLatency : mode==Mode::Allpass4 ? NonlinearAA::Oversample4xDesktop:NonlinearAA::Oversample2xADAA,
+                [&](float v){return float(transfer(v));},[&](double v){return transfer.integral(v);});
+        if(mode==Mode::Elliptic2) return elliptic.process(x,transfer);
         const double cur = transfer(x);
         if (!primed) { previous=x; y1=lp=cur; primed=true; return cur; }
         double y;

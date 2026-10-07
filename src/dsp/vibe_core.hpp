@@ -5,6 +5,9 @@
 #include <cstdint>
 #include "optical_model.hpp"
 #include "nonlinear_transfer.hpp"
+#if defined(VIBE_DESKTOP_ANALYSIS)
+#include "nonlinear_aa.hpp"
+#endif
 
 #define SAMPLE_RATE     44100.0f
 #define SAMPLE_RATE_HZ  44100u
@@ -1251,6 +1254,10 @@ public:
     VibeTuningParams &tuning_params() { return params.tuning; }
 
 #if defined(VIBE_DESKTOP_ANALYSIS)
+    void analysis_set_nonlinear_aa(NonlinearAA input, NonlinearAA feedback, NonlinearAA output) {
+        analysis_aa_modes[0]=input;analysis_aa_modes[1]=feedback;analysis_aa_modes[2]=output;
+        analysis_aa_override=true;reset_audio_state(false);
+    }
     // Desktop characterization switches: numerical/feedback clamps stay active.
     void analysis_disable_auto_level(bool disable) { analysis_no_auto_level = disable; }
     void analysis_disable_wet_compensation(bool disable) { analysis_no_wet_comp = disable; }
@@ -1276,6 +1283,11 @@ private:
     VibeQualityMode quality = VibeQualityMode::Standard;
     // Preserve historical static/startup renders; activate sample-clock control
     // smoothing when a nonlinear control changes during an active stream.
+#if defined(VIBE_DESKTOP_ANALYSIS)
+    bool analysis_aa_override=false;
+    NonlinearAA analysis_aa_modes[3]{};
+    VibeAAState analysis_aa_states[6];
+#endif
     bool nonlinear_automation_active = false;
     float nonlinear_targets[4] = {};
 #if defined(VIBE_DESKTOP_ANALYSIS)
@@ -1797,7 +1809,25 @@ float Vibe::bjt_shape(float data, float drive) {
 }
 
 float Vibe::bjt_shape_midpoint(float data, float drive, VibeOversampleState &state) {
-    if (quality != VibeQualityMode::High || params.legacy_saturation) {
+    bool midpoint_enabled = quality == VibeQualityMode::High;
+#if defined(VIBE_DESKTOP_ANALYSIS)
+    if(analysis_aa_override && !params.legacy_saturation) {
+        const int location=(&state==&output_sat_os_l || &state==&output_sat_os_r) ? 2:0;
+        const int lane=(&state==&input_sat_os_r || &state==&output_sat_os_r) ? 1:0;
+        const auto mode=analysis_aa_modes[location];
+        if(mode!=NonlinearAA::MidpointLegacy) {
+            const double a=.84*double(drive), b=double(smoothed_user.sat_asymmetry)*drive;
+            const double g=double(params.tuning.bjt_gain_trim)*smoothed_user.sat_out_trim;
+            return analysis_aa_states[location*2+lane].process(data,mode,
+                [&](float x){return bjt_shape_core(x,drive);},[&](double x){
+                    const double bias=b*(27+b*b)/(27+9*b*b);
+                    return g*((VibeAAState::primitive(a*x+b)-VibeAAState::primitive(b))/a-bias*x);
+                });
+        }
+    }
+    if (analysis_aa_override) midpoint_enabled = true;
+#endif
+    if (!midpoint_enabled || params.legacy_saturation) {
         return bjt_shape_core(data, drive);
     }
     const float y_cur = bjt_shape_core(data, drive);
@@ -1818,7 +1848,15 @@ float Vibe::bjt_shape_midpoint(float data, float drive, VibeOversampleState &sta
 }
 
 float Vibe::soft_clip_cubic_midpoint(float data, VibeOversampleState &state) {
-    if (quality != VibeQualityMode::High || params.legacy_saturation) {
+    bool midpoint_enabled = quality == VibeQualityMode::High;
+#if defined(VIBE_DESKTOP_ANALYSIS)
+    if(analysis_aa_override && !params.legacy_saturation && analysis_aa_modes[1]!=NonlinearAA::MidpointLegacy) {
+        const int lane=(&state==&feedback_sat_os_r) ? 1:0;
+        return analysis_aa_states[2+lane].process(data,analysis_aa_modes[1],soft_clip_cubic,VibeAAState::primitive);
+    }
+    if (analysis_aa_override) midpoint_enabled = true;
+#endif
+    if (!midpoint_enabled || params.legacy_saturation) {
         return soft_clip_cubic(data);
     }
     const float y_cur = soft_clip_cubic(data);
@@ -2009,6 +2047,9 @@ void Vibe::reset_audio_state(bool reset_lfo) {
     output_trim_smoothed = 1.0f;
     wet_comp_l_raw_state = 1.0f;
     wet_comp_r_raw_state = 1.0f;
+#if defined(VIBE_DESKTOP_ANALYSIS)
+    for(auto& s:analysis_aa_states) s.reset();
+#endif
     input_sat_os_l.reset();
     input_sat_os_r.reset();
     output_sat_os_l.reset();

@@ -249,3 +249,33 @@ python desktop_tools/scripts/plot_nonlinear.py docs/regression/m3
 Whole-effect `broadband_hf_db` replaces the misleading alias-proxy label; use the
 static analyzer for alias attribution. Comparison scripts accept historical names.
 Full methods, equations, results and limitations: [M3 report](../docs/m3-nonlinear-fidelity.md).
+## M3.1 low-delay nonlinear candidates
+
+`nonlinear_analyze DIR` now includes reproducible six-coefficient allpass 2x/4x,
+2x+ADAA and an eighth-order conventional elliptic 2x comparison. FIR4 remains
+an offline reference. Production High remains the M3 midpoint path.
+
+```
+cmake --build build/desktop_tools
+build/desktop_tools/nonlinear_analyze docs/regression/m3-1
+build/desktop_tools/linear_wrapper_response docs/regression/m3-1
+build/desktop_tools/low_latency_analyze docs/regression/m3-1
+build/desktop_tools/aa_notch_trajectory docs/regression/m3-1/aa-notches.csv
+python desktop_tools/scripts/validate_low_latency.py docs/regression/m3-1
+```
+
+The internal `analysis_set_nonlinear_aa(input, feedback, output)` selector is
+compiled only with `VIBE_DESKTOP_ANALYSIS`. Use High coefficient scheduling
+for the deliberate matrix A–H. All oversampled substeps hold the current
+sample's smoothed nonlinear parameters; filter histories continue during
+normal automation. Internal strategy selection explicitly resets audio state
+for offline comparison; it is not a host automation parameter.
+
+`low_latency_analyze` includes the unchanged final conditioner and measures
+32-sample core calls. FFT captures use 32768 warmup and capture samples;
+supplemental slow/deep captures span two full modulation cycles after two
+warmup cycles. Only depth-zero stationary captures classify alias bins.
+Time-varying difference/HF metrics are broadband residuals, not alias.
+`aa_notch_trajectory` is a normalized frozen linear phase-network/dry-wet probe,
+not a simulation of the complete nonlinear loop. Full methods and decision:
+[report](../docs/m3-1-low-latency-antialiasing.md).
