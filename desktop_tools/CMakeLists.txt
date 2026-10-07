@@ -81,3 +81,10 @@ add_test(NAME greybox_stage_test COMMAND greybox_stage_test)
 add_executable(output_conditioner_test src/output_conditioner_test.cpp)
 configure_desktop_tool_target(output_conditioner_test)
 add_test(NAME output_conditioner_test COMMAND output_conditioner_test)
+
+add_executable(optical_model_test src/optical_model_test.cpp)
+configure_desktop_tool_target(optical_model_test)
+add_test(NAME optical_model_test COMMAND optical_model_test)
+
+add_executable(optical_analyze src/optical_analysis.cpp)
+configure_desktop_tool_target(optical_analyze)

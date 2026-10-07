@@ -1,0 +1,15 @@
+trajectory_sample_rate=44100
+trajectory_stride=32
+cycles=4
+seed=1
+drift=0
+quality=High
+voicing=ClassicChorus
+benchmark_sample_rate=44100
+sizeof_OpticalModel=1472
+sizeof_Vibe=5464
+sweep_min=0.58
+sweep_max=0.98
+lamp_lag=1
+reference_lamp_attack_s=0.0288
+reference_lamp_release_s=0.0868

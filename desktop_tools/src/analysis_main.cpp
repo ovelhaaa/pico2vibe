@@ -32,6 +32,8 @@ struct RunConfig {
     float impulse_seconds = 1.0f;
     fs::path compare_to;
     UnivibeParams::QualityMode quality_mode = UnivibeParams::QualityMode::standard;
+    bool legacy_optical = false;
+    bool original_factory_levels = false;
     bool tempo_sync = false;
     float tempo_bpm = 120.0f;
     float tempo_division_beats = 1.0f;
@@ -58,6 +60,8 @@ void usage() {
         << "  --levels-db <lista>            Ex: -24,-18,-12,-6,0\n"
         << "  --sweep-seconds <seg>          Duracao do sweep (padrao: 8)\n"
         << "  --compare-to <pasta>           Pasta de baseline para gerar diff de summary\n"
+        << "  --optical <legacy|reference>    Optical path only; same grey-box/audio DSP\n"
+        << "  --factory-levels <baseline|current> Original or M2 factory level trims\n"
         << "  --quality <eco|standard|high>  Qualidade do DSP (padrao: standard)\n"
         << "  --tempo-sync                   Sincroniza LFO ao BPM/divisao\n"
         << "  --tempo-bpm <30..300>          BPM usado com --tempo-sync\n"
@@ -790,6 +794,8 @@ void write_signal_pair(const fs::path& dir,
 CalibrationMetrics run_preset(const std::string& preset_name, const RunConfig& cfg) {
     UnivibeParams params = preset_params(preset_name);
     params.quality_mode = cfg.quality_mode;
+    params.legacy_optical = cfg.legacy_optical;
+    params.original_factory_levels = cfg.original_factory_levels;
     params.tempo_sync = cfg.tempo_sync;
     params.tempo_bpm = cfg.tempo_bpm;
     params.tempo_division_beats = cfg.tempo_division_beats;
@@ -923,6 +929,14 @@ RunConfig parse_args(int argc, char** argv) {
             cfg.sweep_seconds = std::stof(next());
         } else if (arg == "--compare-to") {
             cfg.compare_to = next();
+        } else if (arg == "--optical") {
+            auto mode = next();
+            if (mode != "legacy" && mode != "reference") throw std::runtime_error("Invalid optical mode");
+            cfg.legacy_optical = mode == "legacy";
+        } else if (arg == "--factory-levels") {
+            auto mode = next();
+            if (mode != "baseline" && mode != "current") throw std::runtime_error("Invalid factory levels");
+            cfg.original_factory_levels = mode == "baseline";
         } else if (arg == "--quality") {
             cfg.quality_mode = parse_quality(next());
         } else if (arg == "--tempo-sync") {
