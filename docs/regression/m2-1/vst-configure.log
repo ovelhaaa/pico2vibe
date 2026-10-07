@@ -1,0 +1,9 @@
+-- Configuring juceaide
+-- Building juceaide
+-- Exporting juceaide
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Configuring done (158.7s)
+-- Generating done (0.4s)
+-- Build files have been written to: C:/progs/pico/pico2vibe/build/m2-1/vst

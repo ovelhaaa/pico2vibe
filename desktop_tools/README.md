@@ -198,3 +198,33 @@ python desktop_tools/scripts/plot_optical.py build/m2/optics build/m2/trajectori
 
 Arquitetura, equações, resultados e limitações:
 [docs/m2-optical-reference.md](../docs/m2-optical-reference.md).
+
+## M2.1 optical calibration and topology
+
+`optical_analyze --out-dir DIR` renders the unchanged six-speed/five-intensity
+matrix with one lamp, exports all four cells and lamp, and writes `calibration.csv`.
+Aggregate means give each Speed × Intensity trajectory equal weight, rather than
+letting slow trajectories dominate by sample count. Run
+`python desktop_tools/scripts/validate_optical.py DIR/summary.csv` for the separate
+optical fidelity checks. Paper extrema constrain cell capability; they are not
+required at every trajectory. No exact measured fitting is claimed.
+
+`dsp_validate --optical reference --topology reference` selects one physical lamp;
+`--topology studio` (default) selects production phase-offset stereo optics.
+These are desktop/internal selections, not public VST parameters. Reference
+optics disable creative drift/phase offsets while preserving the existing audio
+processing and output conditioner. `--factory-levels baseline` freezes M0/M1
+gains for comparison with M2 (current factory gains are also reverted to M0/M1).
+
+`notch_trajectory OUTPUT.csv` exports frozen linear notch minima and stage corners
+for all factory optical settings: seed 1, High, 44.1 kHz, drift/width zero. The
+probe uses the actual stage target coefficients plus equal dry/wet summation;
+it excludes feedback, distortion, Studio wet compensation and conditioning.
+It also probes Classic Vibrato with equal dry/wet, so its minima describe circuit
+phase cancellation potential, not vibrato-output notches. Branch IDs order the
+currently visible minima by frequency; they are not persistent notch identities.
+For M2 comparison compile this source with `-DM2_BASELINE` and headers extracted
+from `252063c`. Full production audio metrics remain in `dsp_validate`.
+
+Detailed constraints, tolerances, results and reproduction commands:
+[docs/m2-1-optical-calibration.md](../docs/m2-1-optical-calibration.md).
